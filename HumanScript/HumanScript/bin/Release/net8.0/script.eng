@@ -1,0 +1,32 @@
+# A simple user information collector
+
+define user_name as "".
+define user_age as 0.
+define output_file as "user_info.txt".
+
+print "--- User Information Collector ---".
+print "Please enter your name:".
+store console input in user_name.
+
+print "Please enter your age:".
+store console input in user_age.
+
+# Create a summary message
+define summary as "".
+set summary to "Name: " combined with user_name.
+set summary to summary combined with ", Age: ".
+turn user_age to text as age_text.
+set summary to summary combined with age_text.
+
+# Print the summary
+print "Summary:".
+print summary.
+
+# Write the summary to a file
+write summary to output_file.
+print "Information saved to ".
+print output_file.
+
+# Wait before exiting
+wait for 2 seconds.
+print "Program finished."

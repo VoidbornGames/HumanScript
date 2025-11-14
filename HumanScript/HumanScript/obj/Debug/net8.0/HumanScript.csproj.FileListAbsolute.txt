@@ -1,0 +1,4 @@
+C:\Users\Naboodi\source\repos\HumanScript\HumanScript\obj\Debug\net8.0\HumanScript.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Naboodi\source\repos\HumanScript\HumanScript\obj\Debug\net8.0\HumanScript.AssemblyInfoInputs.cache
+C:\Users\Naboodi\source\repos\HumanScript\HumanScript\obj\Debug\net8.0\HumanScript.AssemblyInfo.cs
+C:\Users\Naboodi\source\repos\HumanScript\HumanScript\obj\Debug\net8.0\HumanScript.csproj.CoreCompileInputs.cache

@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HumanScript Programming Language Documentation</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        h1, h2, h3, h4 {
+            color: #2c3e50;
+        }
+        h1 {
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            border-bottom: 1px solid #eaecef;
+            padding-bottom: 8px;
+            margin-top: 30px;
+        }
+        code {
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            background-color: #f6f8fa;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-size: 0.9em;
+        }
+        pre {
+            background-color: #f6f8fa;
+            padding: 16px;
+            border-radius: 6px;
+            overflow-x: auto;
+        }
+        pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+        .note {
+            background-color: #e7f3fe;
+            border-left: 6px solid #2196F3;
+            padding: 10px;
+            margin: 15px 0;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .command {
+            font-weight: bold;
+            color: #d35400;
+        }
+    </style>
+</head>
+<body>
+    <h1>HumanScript Programming Language Documentation</h1>
+    
+    <h2>Table of Contents</h2>
+    <ul>
+        <li><a href="#overview">1. Overview</a></li>
+        <li><a href="#getting-started">2. Getting Started</a></li>
+        <li><a href="#language-features">3. Language Features</a>
+            <ul>
+                <li><a href="#variables-and-data-types">3.1 Variables and Data Types</a></li>
+                <li><a href="#input-and-output">3.2 Input and Output</a></li>
+                <li><a href="#operations">3.3 Operations</a></li>
+                <li><a href="#control-flow">3.4 Control Flow</a></li>
+                <li><a href="#functions">3.5 Functions</a></li>
+                <li><a href="#system-interactions">3.6 System Interactions</a></li>
+            </ul>
+        </li>
+        <li><a href="#example-program">4. Example Program</a></li>
+        <li><a href="#syntax-reference">5. Syntax Reference</a></li>
+    </ul>
+
+    <h2 id="overview">1. Overview</h2>
+    <p>HumanScript is a simple, English-like programming language designed to be easily readable and writable by humans. It compiles to 32-bit Windows assembly and is then linked into an executable file (.exe). The language aims to abstract away complex syntax while still providing fundamental programming capabilities.</p>
+    
+    <div class="note">
+        <strong>Note:</strong> HumanScript source files use the <code>.eng</code> extension.
+    </div>
+
+    <h2 id="getting-started">2. Getting Started</h2>
+    
+    <h3>2.1 Prerequisites</h3>
+    <p>To compile HumanScript code, you need the following tools in the same directory as the compiler or in your system's PATH:</p>
+    <ul>
+        <li><strong>NASM (Netwide Assembler)</strong> - For assembling the generated assembly code.</li>
+        <li><strong>GoLink</strong> - For linking the assembled object file into an executable.</li>
+    </ul>
+    
+    <h3>2.2 Compiling a Program</h3>
+    <p>To compile a HumanScript file, run the compiler with the following command:</p>
+    <pre><code>HumanScript.exe [input_file.eng]</code></pre>
+    <p>If no input file is specified, it defaults to <code>script.eng</code>. The compiler will produce an executable file named <code>output.exe</code> (or the name of the input file with a .exe extension).</p>
+    
+    <h3>2.3 Hello World Example</h3>
+    <p>Here's a simple "Hello, World!" program in HumanScript:</p>
+    <pre><code># Define a string variable
+define message as "Hello, World!".
+
+# Print the message to the console
+print message.</code></pre>
+
+    <h2 id="language-features">3. Language Features</h2>
+    
+    <h3 id="variables-and-data-types">3.1 Variables and Data Types</h3>
+    <p>Variables in HumanScript are defined using the <code>define</code> keyword. The language supports three basic data types:</p>
+    <ul>
+        <li><strong>String:</strong> Text enclosed in double quotes.</li>
+        <li><strong>Number/Integer:</strong> Whole numbers.</li>
+        <li><strong>Boolean:</strong> <code>true</code> or <code>false</code>.</li>
+    </ul>
+    
+    <h4>Syntax:</h4>
+    <pre><code>define variable_name as value.</code></pre>
+    
+    <h4>Examples:</h4>
+    <pre><code>define name as "John Doe".
+define age as 30.
+define is_student as true.</code></pre>
+    
+    <h3 id="input-and-output">3.2 Input and Output</h3>
+    
+    <h4>Printing to Console</h4>
+    <p>You can print either variables or literal strings to the console.</p>
+    
+    <h5>Syntax:</h5>
+    <pre><code>print variable_name.
+print "Literal string".</code></pre>
+    
+    <h5>Example:</h5>
+    <pre><code>define greeting as "Welcome".
+print greeting.
+print "This is a literal string."</code></pre>
+    
+    <h4>Getting User Input</h4>
+    <p>You can store user input from the console into a variable.</p>
+    
+    <h5>Syntax:</h5>
+    <pre><code>store console input in variable_name.</code></pre>
+    
+    <h5>Example:</h5>
+    <pre><code>define user_name as "".
+print "Please enter your name:".
+store console input in user_name.
+print "Hello, ".
+print user_name.</code></pre>
+    
+    <h3 id="operations">3.3 Operations</h3>
+    
+    <h4>Arithmetic Operations</h4>
+    <p>HumanScript supports basic arithmetic operations: addition, subtraction, multiplication, and division.</p>
+    
+    <h5>Syntax:</h5>
+    <pre><code># Modify a variable by a number
+add number to variable.
+subtract number from variable.
+multiply variable by number.
+divide variable by number.
+
+# Set a variable to the result of an operation
+set variable to number plus number.
+set variable to variable minus number.
+set variable to number times variable.
+set variable to variable divided by variable.</code></pre>
+    
+    <h5>Example:</h5>
+    <pre><code>define counter as 0.
+add 5 to counter.
+print counter.  # Outputs 5
+
+set counter to counter times 2.
+print counter.  # Outputs 10</code></pre>
+    
+    <h4>String Operations</h4>
+    
+    <h5>String Concatenation</h5>
+    <p>You can combine two strings into a new string.</p>
+    
+    <h5>Syntax:</h5>
+    <pre><code>set destination_string to source_string1 combined with source_string2.</code></pre>
+    
+    <h5>Example:</h5>
+    <pre><code>define first_name as "John".
+define last_name as "Doe".
+define full_name as "".
+set full_name to first_name combined with last_name.
+print full_name.  # Outputs "JohnDoe"</code></pre>
+    
+    <h5>Number to Text Conversion</h5>
+    <p>You can convert a numeric variable to its text representation.</p>
+    
+    <h5>Syntax:</h5>
+    <pre><code>turn number_variable to text as string_variable.</code></pre>
+    
+    <h5>Example:</h5>
+    <pre><code>define age as 25.
+define age_text as "".
+turn age to text as age_text.
+print "You are ".
+print age_text.
+print " years old."</code></pre>
+    
+    <h3 id="control-flow">3.4 Control Flow</h3>
+    
+    <h4>Conditional Statements (If/Else If/Else)</h4>
+    <p>HumanScript supports conditional logic with <code>if</code>, <code>else if</code>, and <code>else</code>. Code blocks are defined by indentation.</p>
+    
+    <h5>Syntax:</h5>
+    <pre><code>if condition:
+    # Code to execute if condition is true
+    [indented code]
+
+else if another_condition:
+    # Code to execute if another_condition is true
+    [indented code]
+
+else:
+    # Code to execute if no conditions are true
+    [indented code]</code></pre>
+    
+    <h5>Conditions:</h5>
+    <pre><code>variable is true
+variable is false
+variable is equal to variable_or_number
+variable is not equal to variable_or_number
+variable is greater than variable_or_number
+variable is less than variable_or_number</code></pre>
+    
+    <h5>Example:</h5>
+    <pre><code>define age as 18.
+
+if age is greater than 18:
+    print "You are an adult.".
+else if age is equal to 18:
+    print "You just became an adult.".
+else:
+    print "You are a minor.".</code></pre>
+    
+    <h4>Loops</h4>
+    <p>HumanScript has a simple <code>repeat</code> loop to execute a block of code a specific number of times.</p>
+    
+    <h5>Syntax:</h5>
+    <pre><code>repeat number times
+[
+    [indented code to repeat]
+]</code></pre>
+    
+    <h5>Example:</h5>
+    <pre><code>define counter as 0.
+repeat 5 times
+[
+    print "Loop iteration".
+    add 1 to counter.
+]
+print counter.  # Outputs 5</code></pre>
+    
+    <h3 id="functions">3.5 Functions</h3>
+    <p>You can define reusable blocks of code as functions and call them from your main program or other functions.</p>
+    
+    <h4>Defining a Function</h4>
+    <pre><code>define function named function_name
+[
+    [indented function body]
+]</code></pre>
+    
+    <h4>Calling a Function</h4>
+    <pre><code>run function function_name.</code></pre>
+    
+    <h4>Example:</h4>
+    <pre><code>define function named say_hello
+[
+    print "Hello from a function!".
+]
+
+# Main program
+print "About to call a function."
+run function say_hello.
+print "Function call finished."</code></pre>
+    
+    <h3 id="system-interactions">3.6 System Interactions</h3>
+    
+    <h4>Waiting</h4>
+    <p>You can pause the program's execution for a specified number of seconds.</p>
+    
+    <h5>Syntax:</h5>
+    <pre><code>wait for number seconds.</code></pre>
+    
+    <h5>Example:</h5>
+    <pre><code>print "Waiting for 3 seconds...".
+wait for 3 seconds.
+print "Done waiting."</code></pre>
+    
+    <h4>Running External Processes</h4>
+    <p>You can execute external programs.</p>
+    
+    <h5>Syntax:</h5>
+    <pre><code>run process "path_to_executable".</code></pre>
+    
+    <h5>Example:</h5>
+    <pre><code>run process "notepad.exe".</code></pre>
+    
+    <h4>File Operations</h4>
+    <p>You can write text or variables to a file.</p>
+    
+    <h5>Syntax:</h5>
+    <pre><code># Write a literal string
+write "text to write" to "file_path.txt".
+
+# Write a variable's content
+write variable_name to "file_path.txt".</code></pre>
+    
+    <h5>Example:</h5>
+    <pre><code>define log_message as "Program started successfully.".
+write log_message to "C:\Temp\log.txt".
+write "Another log entry." to "C:\Temp\log.txt".</code></pre>
+
+    <h2 id="example-program">4. Example Program</h2>
+    <p>Here is a more comprehensive example that demonstrates several features of HumanScript:</p>
+    <pre><code># A simple user information collector
+
+define user_name as "".
+define user_age as 0.
+define output_file as "user_info.txt".
+
+print "--- User Information Collector ---".
+print "Please enter your name:".
+store console input in user_name.
+
+print "Please enter your age:".
+store console input in user_age.
+
+# Create a summary message
+define summary as "".
+set summary to "Name: " combined with user_name.
+set summary to summary combined with ", Age: ".
+turn user_age to text as age_text.
+set summary to summary combined with age_text.
+
+# Print the summary
+print "Summary:".
+print summary.
+
+# Write the summary to a file
+write summary to output_file.
+print "Information saved to ".
+print output_file.
+
+# Wait before exiting
+wait for 2 seconds.
+print "Program finished."</code></pre>
+
+    <h2 id="syntax-reference">5. Syntax Reference</h2>
+    <p>This section provides a quick reference for all HumanScript commands.</p>
+    
+    <table>
+        <tr>
+            <th>Command</th>
+            <th>Syntax</th>
+            <th>Description</th>
+        </tr>
+        <tr>
+            <td class="command">Variable Definition</td>
+            <td><code>define name as value.</code></td>
+            <td>Declares and initializes a variable.</td>
+        </tr>
+        <tr>
+            <td class="command">Print Variable</td>
+            <td><code>print variable_name.</code></td>
+            <td>Prints the value of a variable to the console.</td>
+        </tr>
+        <tr>
+            <td class="command">Print String</td>
+            <td><code>print "string".</code></td>
+            <td>Prints a literal string to the console.</td>
+        </tr>
+        <tr>
+            <td class="command">Get Input</td>
+            <td><code>store console input in variable_name.</code></td>
+            <td>Reads a line of input from the console into a variable.</td>
+        </tr>
+        <tr>
+            <td class="command">Add To</td>
+            <td><code>add number to variable.</code></td>
+            <td>Adds a number to a variable's value.</td>
+        </tr>
+        <tr>
+            <td class="command">Subtract From</td>
+            <td><code>subtract number from variable.</code></td>
+            <td>Subtracts a number from a variable's value.</td>
+        </tr>
+        <tr>
+            <td class="command">Multiply By</td>
+            <td><code>multiply variable by number.</code></td>
+            <td>Multiplies a variable's value by a number.</td>
+        </tr>
+        <tr>
+            <td class="command">Divide By</td>
+            <td><code>divide variable by number.</code></td>
+            <td>Divides a variable's value by a number.</td>
+        </tr>
+        <tr>
+            <td class="command">Set To Operation</td>
+            <td><code>set var to val1 plus val2.</code></td>
+            <td>Sets a variable to the result of an arithmetic operation (plus, minus, times, divided by).</td>
+        </tr>
+        <tr>
+            <td class="command">Set To Number</td>
+            <td><code>set variable to number.</code></td>
+            <td>Sets a variable to a specific number.</td>
+        </tr>
+        <tr>
+            <td class="command">Set To Boolean</td>
+            <td><code>set variable to true/false.</code></td>
+            <td>Sets a boolean variable to true or false.</td>
+        </tr>
+        <tr>
+            <td class="command">String Concatenation</td>
+            <td><code>set dest to src1 combined with src2.</code></td>
+            <td>Concatenates two strings and stores the result.</td>
+        </tr>
+        <tr>
+            <td class="command">Number to Text</td>
+            <td><code>turn num_var to text as str_var.</code></td>
+            <td>Converts a number to its string representation.</td>
+        </tr>
+        <tr>
+            <td class="command">If Statement</td>
+            <td><code>if condition:</code></td>
+            <td>Starts a conditional block.</td>
+        </tr>
+        <tr>
+            <td class="command">Else If Statement</td>
+            <td><code>else if condition:</code></td>
+            <td>Starts an alternative conditional block.</td>
+        </tr>
+        <tr>
+            <td class="command">Else Statement</td>
+            <td><code>else:</code></td>
+            <td>Starts a block for when no conditions are met.</td>
+        </tr>
+        <tr>
+            <td class="command">Repeat Loop</td>
+            <td><code>repeat number times</code></td>
+            <td>Starts a loop that iterates a specified number of times.</td>
+        </tr>
+        <tr>
+            <td class="command">End Block</td>
+            <td><code>]</code></td>
+            <td>Signifies the end of an indented code block (for loops, functions, etc.).</td>
+        </tr>
+        <tr>
+            <td class="command">Define Function</td>
+            <td><code>define function named name</code></td>
+            <td>Starts the definition of a function.</td>
+        </tr>
+        <tr>
+            <td class="command">Run Function</td>
+            <td><code>run function name.</code></td>
+            <td>Calls a previously defined function.</td>
+        </tr>
+        <tr>
+            <td class="command">Wait</td>
+            <td><code>wait for number seconds.</code></td>
+            <td>Pauses execution for a given number of seconds.</td>
+        </tr>
+        <tr>
+            <td class="command">Run Process</td>
+            <td><code>run process "path".</code></td>
+            <td>Executes an external program.</td>
+        </tr>
+        <tr>
+            <td class="command">Write to File</td>
+            <td><code>write content to "path".</code></td>
+            <td>Writes a string or variable's content to a file.</td>
+        </tr>
+        <tr>
+            <td class="command">Comment</td>
+            <td><code># This is a comment</code></td>
+            <td>Single-line comment. The compiler ignores everything after # on a line.</td>
+        </tr>
+    </table>
+</body>
+</html>

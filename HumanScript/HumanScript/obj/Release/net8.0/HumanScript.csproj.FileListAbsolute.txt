@@ -1,0 +1,14 @@
+C:\Users\Naboodi\source\repos\HumanScript\HumanScript\obj\Release\net8.0\HumanScript.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Naboodi\source\repos\HumanScript\HumanScript\obj\Release\net8.0\HumanScript.AssemblyInfoInputs.cache
+C:\Users\Naboodi\source\repos\HumanScript\HumanScript\obj\Release\net8.0\HumanScript.AssemblyInfo.cs
+C:\Users\Naboodi\source\repos\HumanScript\HumanScript\obj\Release\net8.0\HumanScript.csproj.CoreCompileInputs.cache
+C:\Users\Naboodi\source\repos\HumanScript\HumanScript\bin\Release\net8.0\HumanScript.exe
+C:\Users\Naboodi\source\repos\HumanScript\HumanScript\bin\Release\net8.0\HumanScript.deps.json
+C:\Users\Naboodi\source\repos\HumanScript\HumanScript\bin\Release\net8.0\HumanScript.runtimeconfig.json
+C:\Users\Naboodi\source\repos\HumanScript\HumanScript\bin\Release\net8.0\HumanScript.dll
+C:\Users\Naboodi\source\repos\HumanScript\HumanScript\bin\Release\net8.0\HumanScript.pdb
+C:\Users\Naboodi\source\repos\HumanScript\HumanScript\obj\Release\net8.0\HumanScript.dll
+C:\Users\Naboodi\source\repos\HumanScript\HumanScript\obj\Release\net8.0\refint\HumanScript.dll
+C:\Users\Naboodi\source\repos\HumanScript\HumanScript\obj\Release\net8.0\HumanScript.pdb
+C:\Users\Naboodi\source\repos\HumanScript\HumanScript\obj\Release\net8.0\HumanScript.genruntimeconfig.cache
+C:\Users\Naboodi\source\repos\HumanScript\HumanScript\obj\Release\net8.0\ref\HumanScript.dll
