@@ -159,8 +159,8 @@ define last_name as "Doe".
 define full_name as "".
 
 # Concatenate strings
-set full_name to first_name combined with " " combined with last_name.
-print full_name. # Outputs: John Doe
+set full_name to first_name combined with last_name.
+print full_name. # Outputs: JohnDoe
 
 # Convert number to string
 define age as 30.
@@ -177,15 +177,16 @@ else if score is greater than 70:
     print "Good job!".
 else:
     print "Keep trying".
-]
 
 repeat 3 times
+[
     print "This will print 3 times".
 ]
 </code></pre>
 
 <h4>Functions</h4>
 <pre><code class="language-human">define function named greet
+[
     print "Hello there!".
 ]
 
