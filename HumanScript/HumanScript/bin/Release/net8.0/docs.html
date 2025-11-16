@@ -66,6 +66,12 @@
             font-weight: bold;
             color: #d35400;
         }
+        .new-feature {
+            background-color: #f0fff0;
+            border-left: 6px solid #28a745;
+            padding: 10px;
+            margin: 15px 0;
+        }
     </style>
 </head>
 <body>
@@ -83,6 +89,7 @@
                 <li><a href="#control-flow">3.4 Control Flow</a></li>
                 <li><a href="#functions">3.5 Functions</a></li>
                 <li><a href="#system-interactions">3.6 System Interactions</a></li>
+                <li><a href="#file-operations">3.7 File Operations</a></li>
             </ul>
         </li>
         <li><a href="#example-program">4. Example Program</a></li>
@@ -316,21 +323,42 @@ print "Done waiting."</code></pre>
     
     <h5>Example:</h5>
     <pre><code>run process "notepad.exe".</code></pre>
+
+    <h3 id="file-operations">3.7 File Operations</h3>
     
-    <h4>File Operations</h4>
-    <p>You can write text or variables to a file.</p>
+    <h4>Writing to Files</h4>
+    <p>You can write text or variables to a file. The content to be written can be a literal string, a variable, or a combination of strings and variables using the <code>combined with</code> operator.</p>
     
     <h5>Syntax:</h5>
     <pre><code># Write a literal string
 write "text to write" to "file_path.txt".
 
 # Write a variable's content
-write variable_name to "file_path.txt".</code></pre>
+write variable_name to "file_path.txt".
+
+# Write a concatenated string
+write "Hello, " combined with name combined with "!" to "greeting.txt".</code></pre>
     
     <h5>Example:</h5>
     <pre><code>define log_message as "Program started successfully.".
 write log_message to "C:\Temp\log.txt".
 write "Another log entry." to "C:\Temp\log.txt".</code></pre>
+
+    <div class="new-feature">
+        <strong>New Feature:</strong> File Reading
+    </div>
+
+    <h4>Reading from Files</h4>
+    <p>You can read the entire content of a text file into a string variable. This is useful for processing configuration files, logs, or user-generated content.</p>
+
+    <h5>Syntax:</h5>
+    <pre><code>set variable_name to read "file_path.txt".</code></pre>
+
+    <h5>Example:</h5>
+    <pre><code>define file_content as "".
+set file_content to read "C:\Temp\data.txt".
+print "File content is:".
+print file_content.</code></pre>
 
     <h2 id="example-program">4. Example Program</h2>
     <p>Here is a more comprehensive example that demonstrates several features of HumanScript:</p>
@@ -490,6 +518,11 @@ print "Program finished."</code></pre>
             <td class="command">Write to File</td>
             <td><code>write content to "path".</code></td>
             <td>Writes a string or variable's content to a file.</td>
+        </tr>
+        <tr>
+            <td class="command">Read from File</td>
+            <td><code>set var to read "path".</code></td>
+            <td>Reads the entire content of a file into a string variable.</td>
         </tr>
         <tr>
             <td class="command">Comment</td>
