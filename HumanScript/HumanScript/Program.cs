@@ -104,7 +104,7 @@ class HumanScript
         Console.WriteLine("Compiling with Nim...");
 
         var psi = new ProcessStartInfo();
-        psi.FileName = @"C:\Users\Naboodi\source\repos\HumanScript\HumanScript\bin\Release\net8.0\nim-2.2.6\bin\nim.exe";
+        psi.FileName = @"nim-2.2.6\bin\nim.exe";
 
         psi.Arguments =
             @"c --gcc.exe=""C:\TDM-GCC-64\bin\gcc.exe"" " +
@@ -117,7 +117,7 @@ class HumanScript
             Environment.GetEnvironmentVariable("PATH");
 
 
-        psi.WorkingDirectory = @"C:\Users\Naboodi\source\repos\HumanScript\HumanScript\bin\Release\net8.0";
+        psi.WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory;
         psi.UseShellExecute = false;
         psi.RedirectStandardOutput = true;
         psi.RedirectStandardError = true;
@@ -697,3 +697,4 @@ class HumanScript
         functionCode.Add($"{indent}# {line}");
     }
 }
+
