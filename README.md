@@ -1,4 +1,42 @@
-<div class="ds-markdown" style="--ds-md-zoom: 1.143;"><h1><span>HumanScript</span></h1><p class="ds-markdown-paragraph"><span>An English-like programming language that compiles to native executables. HumanScript is designed for simplicity and readability, abstracting away complex syntax while providing core programming functionalities like variables, control flow, file operations, and system interaction.</span></p><h2><span>🚀 What's New in Version 2.0</span></h2><p class="ds-markdown-paragraph"><strong><span>Major Upgrade</span></strong><span>: HumanScript now compiles to </span><strong><span>Nim</span></strong><span> instead of Assembly, bringing significant improvements:</span></p><ul><li><p class="ds-markdown-paragraph"><span>✅ </span><strong><span>Simplified compilation</span></strong><span> - No more NASM/GoLink dependencies</span></p></li><li><p class="ds-markdown-paragraph"><span>✅ </span><strong><span>Cross-platform support</span></strong><span> - Works on Windows, Linux, and macOS</span></p></li><li><p class="ds-markdown-paragraph"><span>✅ </span><strong><span>Better performance</span></strong><span> - Nim compiles to optimized C code</span></p></li><li><p class="ds-markdown-paragraph"><span>✅ </span><strong><span>Cleaner output</span></strong><span> - Readable, maintainable generated code</span></p></li><li><p class="ds-markdown-paragraph"><span>✅ </span><strong><span>Rich standard library</span></strong><span> - Access to Nim's comprehensive libraries</span></p></li><li><p class="ds-markdown-paragraph"><span>✅ </span><strong><span>Automatic memory management</span></strong><span> - No manual memory handling</span></p></li></ul><h2><span>Supported Platforms</span></h2><ul><li><p class="ds-markdown-paragraph"><strong><span>Windows</span></strong><span> 10, 11, Server (2016+)</span></p></li><li><p class="ds-markdown-paragraph"><strong><span>Linux</span></strong><span> (Ubuntu, Debian, CentOS, etc.)</span></p></li><li><p class="ds-markdown-paragraph"><strong><span>macOS</span></strong><span> (10.12+)</span></p></li></ul><h2><span>Table of Contents</span></h2><ul>
+<div class="ds-markdown" style="--ds-md-zoom: 1.143;"><h1><span>HumanScript</span></h1><p class="ds-markdown-paragraph"><span>An English-like programming language that compiles to native executables. HumanScript is designed for simplicity and readability, abstracting away complex syntax while providing core programming functionalities like variables, control flow, file operations, and system interaction.</span></p><h2 dir="auto" class="svelte-121hp7c">🚀 What's New in Version 3.0</h2>
+<p dir="auto" class="svelte-121hp7c">Version 3.0 is a major evolutionary leap, transforming HumanScript into a truly powerful and modern scripting language while retaining its core philosophy of simplicity and readability.</p>
+<div class=""></div>
+<h3 dir="auto" class="svelte-121hp7c">1. <strong>Major Upgrade: Nim Backend</strong></h3>
+<ul dir="auto">
+<li class="text-start">The most significant change is the complete shift from generating Assembly language to generating <strong>Nim</strong>. This is a massive architectural improvement.</li>
+<li class="text-start"><strong>Why Nim?</strong> It's a modern, high-performance, garbage-collected language with a Python-like syntax but C-like speed. It compiles to C, then to native code, giving us the best of all worlds: performance, safety, and portability.</li>
+</ul>
+<h3 dir="auto" class="svelte-121hp7c">2. <strong>Full-Featured Expressions</strong></h3>
+<ul dir="auto">
+<li class="text-start">We can now support complex arithmetic expressions with proper operator precedence, just like Python, C#, or C++.</li>
+<li class="text-start"><strong>Example</strong>: <code class="cursor-pointer codespan">set result to 10 plus 5 times 2;</code> now correctly evaluates to <code class="cursor-pointer codespan">20</code> (multiplication happens before addition).</li>
+</ul>
+<h3 dir="auto" class="svelte-121hp7c">3. <strong>Nested Control Structures</strong></h3>
+<ul dir="auto">
+<li class="text-start">A long-requested feature is finally here! You can now nest <code class="cursor-pointer codespan">if</code>, <code class="cursor-pointer codespan">else</code>, and <code class="cursor-pointer codespan">repeat</code> statements inside each other, and inside functions.</li>
+<li class="text-start">This allows for much more complex and powerful program logic, such as loops inside conditionals, or conditionals inside loops.</li>
+<li class="text-start"><strong>Example</strong>: A <code class="cursor-pointer codespan">repeat</code> loop that contains an <code class="cursor-pointer codespan">if</code> statement to break out of the loop under a certain condition.</li>
+</ul>
+<h3 dir="auto" class="svelte-121hp7c">4. <strong>File Reading</strong></h3>
+<ul dir="auto">
+<li class="text-start">A new command <code class="cursor-pointer codespan">read file "path.txt" and store it in variable</code> has been added.</li>
+<li class="text-start">This allows your programs to read configuration files, process logs, or handle user-generated content from previous runs.</li>
+</ul>
+<h3 dir="auto" class="svelte-121hp7c">5. <strong>Robust Parser &amp; Code Generation</strong></h3>
+<ul dir="auto">
+<li class="text-start">The parser has been significantly refactored to handle nested structures and complex expressions gracefully.</li>
+<li class="text-start">The code generator now correctly translates all these new features into clean, efficient Nim code.</li>
+</ul>
+<h3 dir="auto" class="svelte-121hp7c">6. <strong>Modernized Syntax &amp; Semantics</strong></h3>
+<ul dir="auto">
+<li class="text-start"><strong>Blocks</strong>: All control structures (<code class="cursor-pointer codespan">if</code>, <code class="cursor-pointer codespan">repeat</code>, <code class="cursor-pointer codespan">function</code>) now use <code class="cursor-pointer codespan">[</code> and <code class="cursor-pointer codespan">]</code> for clear, C-style block delimiters instead of relying on indentation. This is more robust and familiar to programmers from other languages.</li>
+<li class="text-start"><strong>Semicolons</strong>: All statements now end with a semicolon <code class="cursor-pointer codespan">;</code>, enforcing a clear and consistent statement structure.</li>
+</ul>
+<h3 dir="auto" class="svelte-121hp7c">7. <strong>Cross-Platform Foundation</strong></h3>
+<ul dir="auto">
+<li class="text-start">By compiling to Nim and then to C, we are no longer limited to Windows-specific assembly tools. The same HumanScript compiler can now run on Linux and macOS and produce native executables for those platforms.</li>
+</ul>
+<p dir="auto" class="svelte-121hp7c">In short, version 3.0 transforms HumanScript from a simple toy language into a genuinely powerful and modern scripting language, while keeping its core goal of being human-readable.</p><ul><li><p class="ds-markdown-paragraph"><strong><span>Windows</span></strong><span> 10, 11, Server (2016+)</span></p></li><li><p class="ds-markdown-paragraph"><strong><span>Linux</span></strong><span> (Ubuntu, Debian, CentOS, etc.)</span></p></li><li><p class="ds-markdown-paragraph"><strong><span>macOS</span></strong><span> (10.12+)</span></p></li></ul><h2><span>Table of Contents</span></h2><ul>
 <li><a href="#features">Features</a></li>
 <li><a href="#requirements">Requirements</a></li>
 <li><a href="#installation">Installation</a></li>
