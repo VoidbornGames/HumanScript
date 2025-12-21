@@ -1,16 +1,23 @@
 
 
-define num as 0.
-define numT as " ".
-define txt as " ".
-define msg as "Result: ".
+define loopInCounter as 1;
+define loopOut as 0;
+define result as "Result: ";
+define loopOutText as " ";
 
-add 10 to num.
-subtract 5 from num.
-set num to num times num.
+repeat loopInCounter times:
+[
+    print loopInCounter;
+    add 1 to loopInCounter;
+    add 1 to loopOut;
 
-turn num to text as numT.
-print numT.
+    if loopInCounter is greater than 10:
+    [
+        set loopInCounter to 1;
+    ]
+]
 
-set txt to msg combined with numT.
-write txt to "testss.txt".
+turn loopOut to text as loopOutText;
+set result to result combined with loopOutText;
+
+print result;

@@ -4,697 +4,934 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
-using System.Xml;
 
-class HumanScript
+namespace HumanScript
 {
-    // Global state for the compiler
-    static Dictionary<string, string> variables = new Dictionary<string, string>();
-    static Dictionary<string, string> variableTypes = new Dictionary<string, string>();
-    static Dictionary<string, List<string>> functionBodies = new Dictionary<string, List<string>>();
-    static List<string> nimCode = new List<string>();
-    static List<string> functionCode = new List<string>();
-    static Stack<int> ifCountStack = new Stack<int>();
-    static Stack<int> loopCountStack = new Stack<int>();
-    static int strCount = 0;
-    static int ifCount = 0;
-    static int loopCount = 0;
-    static int uniqueId = 0;
-    static bool inMainCode = true;
-
-    static void Main(string[] mainArgs)
+    class Program
     {
-        string inputFile = "script.eng";
-        string nimFile = "temp.nim";
-        string exeFile = "output.exe";
-
-        if (mainArgs.Length > 0)
-            if (string.IsNullOrEmpty(mainArgs[0]) || !string.IsNullOrEmpty(mainArgs[0]) && !mainArgs[0].EndsWith(".eng"))
+        static void Main(string[] args)
+        {
+            try
             {
-                Console.WriteLine($"File {inputFile} is not a valid '.eng' HumanScript file!");
-                return;
+                var config = new Configuration(args);
+                var transpiler = new HumanScriptTranspiler(config);
+                transpiler.Transpile();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error: {ex.Message}");
+                Environment.Exit(1);
+            }
+        }
+    }
+
+    class Configuration
+    {
+        public string InputFile { get; }
+        public string NimFile { get; }
+        public string ExeFile { get; }
+        public string NimCompilerPath { get; }
+        public string BaseDirectory { get; }
+
+        public Configuration(string[] args)
+        {
+            BaseDirectory = AppDomain.CurrentDomain.BaseDirectory;
+
+            string inputFileName = args.Length > 0 ? args[0] : "script.eng";
+            InputFile = Path.Combine(BaseDirectory, inputFileName);
+
+            if (!InputFile.EndsWith(".eng"))
+            {
+                throw new Exception($"File '{inputFileName}' is not a valid '.eng' HumanScript file!");
+            }
+
+            if (!File.Exists(InputFile))
+            {
+                throw new Exception($"File not found at expected location: {InputFile}");
+            }
+
+            NimFile = Path.Combine(BaseDirectory, "temp.nim");
+            ExeFile = Path.Combine(BaseDirectory, "output.exe");
+
+            NimCompilerPath = Path.Combine(BaseDirectory, @"nim-2.2.6\bin\nim.exe");
+
+            if (!File.Exists(NimCompilerPath))
+            {
+                throw new Exception($"Nim compiler not found at expected location: {NimCompilerPath}");
+            }
+        }
+    }
+
+    class Token
+    {
+        public TokenType Type { get; }
+        public string Value { get; }
+        public int LineNumber { get; }
+
+        public Token(TokenType type, string value, int lineNumber)
+        {
+            Type = type;
+            Value = value;
+            LineNumber = lineNumber;
+        }
+    }
+
+    enum TokenType
+    {
+        // Literals
+        Number,
+        String,
+        Boolean,
+        Identifier,
+
+        // Keywords
+        Define,
+        As,
+        Function,
+        Named,
+        Set,
+        To,
+        Add,
+        Subtract,
+        Multiply,
+        Divide,
+        By,
+        From,
+        Print,
+        If,
+        Else,
+        ElseIf,
+        Repeat,
+        Times,
+        Run,
+        Wait,
+        For,
+        Seconds,
+        CombinedWith,
+        Turn,
+        Text,
+        Store,
+        Console,
+        Input,
+        In,
+        Write,
+        Process,
+        Is,
+        Read,
+        File,
+        And, 
+        It, 
+
+        // Operators
+        Equal,
+        NotEqual,
+        GreaterThan,
+        LessThan,
+        Plus,
+        Minus,
+        TimesOp,
+        DividedBy,
+
+        // Special
+        Colon,
+        Period,
+        Semicolon,
+        Comma,
+        LeftBracket,
+        RightBracket,
+        EndOfLine,
+        Unknown
+    }
+
+    class Lexer
+    {
+        private readonly string[] _lines;
+        private int _currentLine;
+        private int _currentPosition;
+
+        public Lexer(string[] lines)
+        {
+            _lines = lines;
+            _currentLine = 0;
+            _currentPosition = 0;
+        }
+
+        public List<Token> Tokenize()
+        {
+            var tokens = new List<Token>();
+
+            while (_currentLine < _lines.Length)
+            {
+                var line = _lines[_currentLine];
+
+                if (string.IsNullOrWhiteSpace(line) || line.Trim().StartsWith("#"))
+                {
+                    _currentLine++;
+                    continue;
+                }
+
+                while (_currentPosition < line.Length)
+                {
+                    if (char.IsWhiteSpace(line[_currentPosition]))
+                    {
+                        _currentPosition++;
+                        continue;
+                    }
+
+                    var token = GetNextToken(line);
+                    if (token != null) tokens.Add(token);
+                }
+
+                tokens.Add(new Token(TokenType.EndOfLine, "", _currentLine + 1));
+                _currentLine++;
+                _currentPosition = 0;
+            }
+
+            if (tokens.Count > 0 && tokens[tokens.Count - 1].Type != TokenType.EndOfLine)
+            {
+                tokens.Add(new Token(TokenType.EndOfLine, "", _lines.Length));
+            }
+
+            return tokens;
+        }
+
+        private Token GetNextToken(string line)
+        {
+            var remaining = line.Substring(_currentPosition);
+
+            var numberMatch = Regex.Match(remaining, @"^\d+");
+            if (numberMatch.Success)
+            {
+                var value = numberMatch.Value;
+                _currentPosition += value.Length;
+                return new Token(TokenType.Number, value, _currentLine + 1);
+            }
+
+            if (remaining.StartsWith("\""))
+            {
+                var endIndex = remaining.IndexOf("\"", 1);
+                if (endIndex == -1) throw new Exception($"Unterminated string at line {_currentLine + 1}");
+                var value = remaining.Substring(0, endIndex + 1);
+                _currentPosition += value.Length;
+                return new Token(TokenType.String, value, _currentLine + 1);
+            }
+
+            if (remaining.StartsWith("true")) { _currentPosition += 4; return new Token(TokenType.Boolean, "true", _currentLine + 1); }
+            if (remaining.StartsWith("false")) { _currentPosition += 5; return new Token(TokenType.Boolean, "false", _currentLine + 1); }
+
+            var multiCharPatterns = new Dictionary<string, TokenType>
+            {
+                {"read", TokenType.Read},{"file", TokenType.File},{"and", TokenType.And},{"it", TokenType.It},
+                {"define", TokenType.Define}, {"function", TokenType.Function}, {"named", TokenType.Named}, {"set", TokenType.Set}, {"to", TokenType.To},
+                {"add", TokenType.Add}, {"subtract", TokenType.Subtract}, {"multiply", TokenType.Multiply}, {"divide", TokenType.Divide}, {"by", TokenType.By},
+                {"from", TokenType.From}, {"print", TokenType.Print}, {"if", TokenType.If}, {"else if", TokenType.ElseIf}, {"else", TokenType.Else},
+                {"repeat", TokenType.Repeat}, {"times", TokenType.Times}, {"run", TokenType.Run}, {"wait", TokenType.Wait}, {"for", TokenType.For},
+                {"seconds", TokenType.Seconds}, {"combined with", TokenType.CombinedWith}, {"turn", TokenType.Turn}, {"text", TokenType.Text},
+                {"as", TokenType.As}, {"store", TokenType.Store}, {"console", TokenType.Console}, {"input", TokenType.Input}, {"in", TokenType.In},
+                {"write", TokenType.Write}, {"process", TokenType.Process}, {"equal to", TokenType.Equal}, {"not equal to", TokenType.NotEqual},
+                {"greater than", TokenType.GreaterThan}, {"less than", TokenType.LessThan}, {"plus", TokenType.Plus}, {"minus", TokenType.Minus},
+                {"divided by", TokenType.DividedBy}, {"is", TokenType.Is}, {":", TokenType.Colon}, {".", TokenType.Period}, {";", TokenType.Semicolon},
+                {",", TokenType.Comma}, {"[", TokenType.LeftBracket}, {"]", TokenType.RightBracket}
+            };
+
+            foreach (var pattern in multiCharPatterns.OrderByDescending(p => p.Key.Length))
+            {
+                if (remaining.StartsWith(pattern.Key))
+                {
+                    _currentPosition += pattern.Key.Length;
+                    return new Token(pattern.Value, pattern.Key, _currentLine + 1);
+                }
+            }
+
+            var identifierMatch = Regex.Match(remaining, @"^[a-zA-Z_][a-zA-Z0-9_]*");
+            if (identifierMatch.Success)
+            {
+                var value = identifierMatch.Value;
+                _currentPosition += value.Length;
+                return new Token(TokenType.Identifier, value, _currentLine + 1);
+            }
+
+            throw new Exception($"Unknown token at line {_currentLine + 1}, position {_currentPosition}: '{remaining[0]}'");
+        }
+    }
+
+
+    abstract class AstNode { public int LineNumber { get; } protected AstNode(int lineNumber) { LineNumber = lineNumber; } public abstract T Accept<T>(IAstVisitor<T> visitor); }
+    class ProgramNode : AstNode
+    {
+        public List<VariableDeclarationNode> GlobalVariables { get; }
+        public List<FunctionDefinitionNode> Functions { get; }
+        public List<StatementNode> MainStatements { get; }
+        public ProgramNode(List<VariableDeclarationNode> gv, List<FunctionDefinitionNode> f, List<StatementNode> ms) : base(0) { GlobalVariables = gv; Functions = f; MainStatements = ms; }
+        public override T Accept<T>(IAstVisitor<T> visitor) => visitor.Visit(this);
+    }
+    class VariableDeclarationNode : AstNode
+    {
+        public string Name, Type, Value;
+        public VariableDeclarationNode(string name, string type, string value, int lineNumber) : base(lineNumber) { Name = name; Type = type; Value = value; }
+        public override T Accept<T>(IAstVisitor<T> visitor) => visitor.Visit(this);
+    }
+    class FunctionDefinitionNode : AstNode
+    {
+        public string Name; public List<StatementNode> Body;
+        public FunctionDefinitionNode(string name, List<StatementNode> body, int lineNumber) : base(lineNumber) { Name = name; Body = body; }
+        public override T Accept<T>(IAstVisitor<T> visitor) => visitor.Visit(this);
+    }
+    abstract class StatementNode : AstNode { protected StatementNode(int lineNumber) : base(lineNumber) { } }
+    class BlockNode : StatementNode
+    {
+        public List<StatementNode> Statements { get; }
+        public BlockNode(List<StatementNode> statements, int lineNumber) : base(lineNumber) { Statements = statements; }
+        public override T Accept<T>(IAstVisitor<T> visitor) => visitor.Visit(this);
+    }
+    class AssignmentNode : StatementNode
+    {
+        public string VariableName; public ExpressionNode Value;
+        public AssignmentNode(string varName, ExpressionNode value, int lineNumber) : base(lineNumber) { VariableName = varName; Value = value; }
+        public override T Accept<T>(IAstVisitor<T> visitor) => visitor.Visit(this);
+    }
+    class CompoundAssignmentNode : StatementNode
+    {
+        public string VariableName; public string Operator; public ExpressionNode Value;
+        public CompoundAssignmentNode(string varName, string op, ExpressionNode value, int lineNumber) : base(lineNumber) { VariableName = varName; Operator = op; Value = value; }
+        public override T Accept<T>(IAstVisitor<T> visitor) => visitor.Visit(this);
+    }
+    class PrintNode : StatementNode
+    {
+        public ExpressionNode Value;
+        public PrintNode(ExpressionNode value, int lineNumber) : base(lineNumber) { Value = value; }
+        public override T Accept<T>(IAstVisitor<T> visitor) => visitor.Visit(this);
+    }
+    class IfNode : StatementNode
+    {
+        public ExpressionNode Condition; public List<StatementNode> ThenStatements; public List<(ExpressionNode, List<StatementNode>)> ElseIfBranches; public List<StatementNode> ElseStatements;
+        public IfNode(ExpressionNode cond, List<StatementNode> then, List<(ExpressionNode, List<StatementNode>)> elif, List<StatementNode> elseS, int lineNumber) : base(lineNumber) { Condition = cond; ThenStatements = then; ElseIfBranches = elif; ElseStatements = elseS; }
+        public override T Accept<T>(IAstVisitor<T> visitor) => visitor.Visit(this);
+    }
+    class RepeatNode : StatementNode
+    {
+        public ExpressionNode Count; public List<StatementNode> Body;
+        public RepeatNode(ExpressionNode count, List<StatementNode> body, int lineNumber) : base(lineNumber) { Count = count; Body = body; }
+        public override T Accept<T>(IAstVisitor<T> visitor) => visitor.Visit(this);
+    }
+    class FunctionCallNode : StatementNode, ExpressionNode
+    {
+        public string FunctionName;
+        public FunctionCallNode(string funcName, int lineNumber) : base(lineNumber) { FunctionName = funcName; }
+        public override T Accept<T>(IAstVisitor<T> visitor) => visitor.Visit(this);
+    }
+    class WaitNode : StatementNode
+    {
+        public ExpressionNode Seconds;
+        public WaitNode(ExpressionNode seconds, int lineNumber) : base(lineNumber) { Seconds = seconds; }
+        public override T Accept<T>(IAstVisitor<T> visitor) => visitor.Visit(this);
+    }
+    class InputNode : StatementNode
+    {
+        public string VariableName;
+        public InputNode(string varName, int lineNumber) : base(lineNumber) { VariableName = varName; }
+        public override T Accept<T>(IAstVisitor<T> visitor) => visitor.Visit(this);
+    }
+    class ProcessNode : StatementNode
+    {
+        public string ProcessPath;
+        public ProcessNode(string path, int lineNumber) : base(lineNumber) { ProcessPath = path; }
+        public override T Accept<T>(IAstVisitor<T> visitor) => visitor.Visit(this);
+    }
+    class WriteFileNode : StatementNode
+    {
+        public ExpressionNode Content; public string FilePath;
+        public WriteFileNode(ExpressionNode content, string path, int lineNumber) : base(lineNumber) { Content = content; FilePath = path; }
+        public override T Accept<T>(IAstVisitor<T> visitor) => visitor.Visit(this);
+    }
+    class TypeConversionNode : StatementNode
+    {
+        public string SourceVariable, TargetVariable;
+        public TypeConversionNode(string src, string target, int lineNumber) : base(lineNumber) { SourceVariable = src; TargetVariable = target; }
+        public override T Accept<T>(IAstVisitor<T> visitor) => visitor.Visit(this);
+    }
+
+    interface ExpressionNode { T Accept<T>(IAstVisitor<T> visitor); }
+    class BinaryOperationNode : ExpressionNode
+    {
+        public ExpressionNode Left, Right; public string Operator; public int LineNumber;
+        public BinaryOperationNode(ExpressionNode left, string op, ExpressionNode right, int lineNumber) { Left = left; Operator = op; Right = right; LineNumber = lineNumber; }
+        public T Accept<T>(IAstVisitor<T> visitor) => visitor.Visit(this);
+    }
+    class ConcatenationExpressionNode : ExpressionNode
+    {
+        public ExpressionNode Left, Right; public int LineNumber;
+        public ConcatenationExpressionNode(ExpressionNode left, ExpressionNode right, int lineNumber) { Left = left; Right = right; LineNumber = lineNumber; }
+        public T Accept<T>(IAstVisitor<T> visitor) => visitor.Visit(this);
+    }
+    class VariableNode : ExpressionNode
+    {
+        public string Name; public int LineNumber;
+        public VariableNode(string name, int lineNumber) { Name = name; LineNumber = lineNumber; }
+        public T Accept<T>(IAstVisitor<T> visitor) => visitor.Visit(this);
+    }
+    class LiteralNode : ExpressionNode
+    {
+        public string Value, Type; public int LineNumber;
+        public LiteralNode(string value, string type, int lineNumber) { Value = value; Type = type; LineNumber = lineNumber; }
+        public T Accept<T>(IAstVisitor<T> visitor) => visitor.Visit(this);
+    }
+    class ReadFileNode : StatementNode
+    {
+        public string FilePath;
+        public string VariableName;
+
+        public ReadFileNode(string filePath, string varName, int lineNumber) : base(lineNumber)
+        {
+            FilePath = filePath;
+            VariableName = varName;
+        }
+
+        public override T Accept<T>(IAstVisitor<T> visitor) => visitor.Visit(this);
+    }
+
+    interface IAstVisitor<T>
+    {
+        T Visit(ProgramNode node); T Visit(VariableDeclarationNode node); T Visit(FunctionDefinitionNode node);
+        T Visit(AssignmentNode node); T Visit(CompoundAssignmentNode node);
+        T Visit(PrintNode node); T Visit(IfNode node); T Visit(RepeatNode node);
+        T Visit(FunctionCallNode node); T Visit(WaitNode node); T Visit(InputNode node); T Visit(ProcessNode node);
+        T Visit(WriteFileNode node); T Visit(TypeConversionNode node); T Visit(BinaryOperationNode node);
+        T Visit(ConcatenationExpressionNode node);
+        T Visit(VariableNode node); T Visit(LiteralNode node);
+        T Visit(BlockNode node);
+        T Visit(ReadFileNode node);
+    }
+
+    class Parser
+    {
+        private readonly List<Token> _tokens;
+        private int _current;
+
+        public Parser(List<Token> tokens)
+        {
+            _tokens = tokens;
+            _current = 0;
+        }
+
+        public ProgramNode Parse()
+        {
+            var gVars = new List<VariableDeclarationNode>();
+            var funcs = new List<FunctionDefinitionNode>();
+            var mainStmts = new List<StatementNode>();
+
+            while (!IsAtEnd())
+            {
+                if (Match(TokenType.EndOfLine))
+                {
+                    continue;
+                }
+
+                if (Match(TokenType.Define))
+                {
+                    if (Match(TokenType.Function))
+                    {
+                        Consume(TokenType.Named, "Expected 'named'");
+                        var name = Consume(TokenType.Identifier, "Expected function name").Value;
+                        Consume(TokenType.Colon, "Expected ':' after function signature");
+                        Consume(TokenType.EndOfLine, "Expected newline after ':'");
+
+                        var body = ParseBlock();
+
+                        Consume(TokenType.EndOfLine, "Expected EOL after function definition block");
+
+                        funcs.Add(new FunctionDefinitionNode(name, body, Previous().LineNumber));
+                    }
+                    else
+                    {
+                        var name = Consume(TokenType.Identifier, "Expected variable name").Value;
+                        Consume(TokenType.As, "Expected 'as'");
+                        string type = "", value = "";
+                        if (Match(TokenType.String)) { type = "string"; value = Previous().Value; }
+                        else if (Match(TokenType.Boolean)) { type = "boolean"; value = Previous().Value; }
+                        else if (Match(TokenType.Number)) { type = "number"; value = Previous().Value; }
+                        else { throw new Exception($"Expected type (string, boolean, number) at line {Peek().LineNumber}"); }
+                        Consume(TokenType.Semicolon, "Expected ';'");
+                        Consume(TokenType.EndOfLine, "Expected EOL");
+                        gVars.Add(new VariableDeclarationNode(name, type, value, Previous().LineNumber));
+                    }
+                }
+                else
+                {
+                    var stmt = ParseStatement();
+                    if (stmt != null) mainStmts.Add(stmt);
+                }
+            }
+            return new ProgramNode(gVars, funcs, mainStmts);
+        }
+
+        private List<StatementNode> ParseBlock()
+        {
+            var stmts = new List<StatementNode>();
+            Consume(TokenType.LeftBracket, "Expected '[' to start a block");
+            while (!Check(TokenType.RightBracket) && !IsAtEnd())
+            {
+                var stmt = ParseStatement();
+                if (stmt != null) stmts.Add(stmt);
+            }
+            Consume(TokenType.RightBracket, "Expected ']' to end a block");
+            return stmts;
+        }
+
+        private StatementNode ParseStatement()
+        {
+            if (IsAtEnd()) return null;
+
+            if (Match(TokenType.If)) return ParseIf();
+            if (Match(TokenType.Repeat)) return ParseRepeat();
+            if (Match(TokenType.Read)) return ParseReadFile();
+            if (Match(TokenType.Add, TokenType.Subtract, TokenType.Multiply, TokenType.Divide)) return ParseCompoundAssignment();
+            if (Match(TokenType.Add, TokenType.Subtract, TokenType.Multiply, TokenType.Divide)) return ParseCompoundAssignment();
+            if (Match(TokenType.Set)) return ParseAssignment();
+            if (Match(TokenType.Print)) return ParsePrint();
+            if (Match(TokenType.Run)) return ParseFunctionCall();
+            if (Match(TokenType.Wait)) return ParseWait();
+            if (Match(TokenType.Store)) return ParseInput();
+            if (Match(TokenType.Write)) return ParseWriteFile();
+            if (Match(TokenType.Turn)) return ParseTypeConversion();
+            if (Match(TokenType.Process)) return ParseProcess();
+            if (Match(TokenType.EndOfLine)) return null;
+
+            throw new Exception($"Unexpected token at line {Peek().LineNumber}: {Peek().Value}");
+        }
+
+        private StatementNode ParseReadFile()
+        {
+            Consume(TokenType.File, "Expected 'file'");
+            var path = Consume(TokenType.String, "Expected file path").Value;
+
+            if (path.StartsWith("\"") && path.EndsWith("\""))
+            {
+                path = path.Substring(1, path.Length - 2);
+            }
+
+            Consume(TokenType.And, "Expected 'and'");
+            Consume(TokenType.Store, "Expected 'store'");
+            Consume(TokenType.It, "Expected 'it'");
+            Consume(TokenType.In, "Expected 'in'");
+
+            var varName = Consume(TokenType.Identifier, "Expected variable name").Value;
+
+            Consume(TokenType.Semicolon, "Expected ';'");
+            Consume(TokenType.EndOfLine, "Expected EOL");
+
+            return new ReadFileNode(path, varName, Previous().LineNumber);
+        }
+        private StatementNode ParseCompoundAssignment()
+        {
+            var operation = Previous().Type;
+            string varName, op;
+            ExpressionNode value;
+
+            if (operation == TokenType.Add || operation == TokenType.Subtract)
+            {
+                value = ParseExpression();
+                Consume(operation == TokenType.Add ? TokenType.To : TokenType.From, $"Expected '{(operation == TokenType.Add ? "to" : "from")}'");
+                varName = Consume(TokenType.Identifier, "Expected variable name").Value;
+                op = operation == TokenType.Add ? "+=" : "-=";
             }
             else
             {
-                inputFile = mainArgs[0];
+                varName = Consume(TokenType.Identifier, "Expected variable name").Value;
+                Consume(TokenType.By, "Expected 'by'");
+                value = ParseExpression();
+                op = operation == TokenType.Multiply ? "*=" : "div=";
             }
-
-        if (!File.Exists(inputFile))
-        {
-            Console.WriteLine($"File {inputFile} not found.");
-            return;
+            Consume(TokenType.Semicolon, "Expected ';'");
+            Consume(TokenType.EndOfLine, "Expected EOL");
+            return new CompoundAssignmentNode(varName, op, value, Previous().LineNumber);
         }
 
-        var lines = File.ReadAllLines(inputFile);
-
-        // --- PASS 1: Parse all global variables and function definitions ---
-        ParseFunctionsAndGlobals(lines);
-
-        // --- Parse all main variables ---
-
-
-        // --- Initialize Nim code with imports and declarations ---
-        InitializeNimCode();
-
-        // --- PASS 2: Separate main code from functions ---
-        var mainProgramLines = new List<string>();
-        inMainCode = true;
-        foreach (var line in lines)
+        private StatementNode ParseAssignment()
         {
-            string trimmed = line.Trim();
-            if (trimmed.StartsWith("define function named"))
+            var varName = Consume(TokenType.Identifier, "Expected variable name").Value;
+            Consume(TokenType.To, "Expected 'to'");
+            var value = ParseExpression();
+            Consume(TokenType.Semicolon, "Expected ';'");
+            Consume(TokenType.EndOfLine, "Expected EOL");
+            return new AssignmentNode(varName, value, Previous().LineNumber);
+        }
+
+        private StatementNode ParsePrint()
+        {
+            var value = ParseExpression();
+            Consume(TokenType.Semicolon, "Expected ';'");
+            Consume(TokenType.EndOfLine, "Expected EOL");
+            return new PrintNode(value, Previous().LineNumber);
+        }
+
+        private StatementNode ParseIf()
+        {
+            var condition = ParseCondition();
+            Consume(TokenType.Colon, "Expected ':' after if condition");
+            if (Check(TokenType.EndOfLine)) Advance();
+
+            var thenStatements = ParseBlock();
+            if (Check(TokenType.EndOfLine)) Advance();
+
+            var elseIfBranches = new List<(ExpressionNode, List<StatementNode>)>();
+            while (Match(TokenType.ElseIf))
             {
-                inMainCode = false;
-                continue;
+                var elifCondition = ParseCondition();
+                Consume(TokenType.Colon, "Expected ':' after else if condition");
+                if (Check(TokenType.EndOfLine)) Advance();
+                var elifStatements = ParseBlock();
+                elseIfBranches.Add((elifCondition, elifStatements));
+                if (Check(TokenType.EndOfLine)) Advance();
             }
-            if (trimmed == "]")
+
+            List<StatementNode> elseStatements = null;
+            if (Match(TokenType.Else))
             {
-                inMainCode = true;
-                continue;
+                Consume(TokenType.Colon, "Expected ':' after else");
+                if (Check(TokenType.EndOfLine)) Advance();
+                elseStatements = ParseBlock();
             }
 
-            if (inMainCode)
+            Match(TokenType.EndOfLine);
+            return new IfNode(condition, thenStatements, elseIfBranches, elseStatements, Previous().LineNumber);
+        }
+
+        private StatementNode ParseRepeat()
+        {
+            var count = ParseExpression();
+            Consume(TokenType.Times, "Expected 'times'");
+            Consume(TokenType.Colon, "Expected ':' after repeat count");
+            if (Check(TokenType.EndOfLine)) Advance();
+
+            var body = ParseBlock();
+            Match(TokenType.EndOfLine);
+            return new RepeatNode(count, body, Previous().LineNumber);
+        }
+
+        private ExpressionNode ParseCondition()
+        {
+            var left = ParseExpression();
+            if (Match(TokenType.Is)) { /* 'is' is optional for user */ }
+            if (Match(TokenType.Equal, TokenType.NotEqual, TokenType.GreaterThan, TokenType.LessThan))
             {
-                mainProgramLines.Add(line);
+                var op = Previous().Value;
+                var right = ParseExpression();
+                return new BinaryOperationNode(left, op, right, Previous().LineNumber);
             }
+
+            throw new Exception($"Expected comparison operator at line {Peek().LineNumber}");
         }
 
-        // --- Compile the main program ---
-        nimCode.Add("proc main() =");
-        CompileCodeBlock(mainProgramLines, 2);
-        nimCode.Add("  discard");
-        nimCode.Add("");
-
-        // --- Add function definitions ---
-        nimCode.AddRange(functionCode);
-
-        // --- Add main procedure call ---
-        nimCode.Add("main()");
-
-        // --- Write Nim file ---
-        using (var sw = new StreamWriter(nimFile))
+        private StatementNode ParseFunctionCall()
         {
-            foreach (var line in nimCode)
+            Consume(TokenType.Function, "Expected 'function'");
+            var name = Consume(TokenType.Identifier, "Expected function name").Value;
+            Consume(TokenType.Semicolon, "Expected ';'");
+            Consume(TokenType.EndOfLine, "Expected EOL");
+            return new FunctionCallNode(name, Previous().LineNumber);
+        }
+
+        private StatementNode ParseWait()
+        {
+            Consume(TokenType.For, "Expected 'for'");
+            var seconds = ParseExpression();
+            Consume(TokenType.Seconds, "Expected 'seconds'");
+            Consume(TokenType.Semicolon, "Expected ';'");
+            Consume(TokenType.EndOfLine, "Expected EOL");
+            return new WaitNode(seconds, Previous().LineNumber);
+        }
+
+        private StatementNode ParseInput()
+        {
+            Consume(TokenType.Console, "Expected 'console'");
+            Consume(TokenType.Input, "Expected 'input'");
+            Consume(TokenType.In, "Expected 'in'");
+            var name = Consume(TokenType.Identifier, "Expected variable name").Value;
+            Consume(TokenType.Semicolon, "Expected ';'");
+            Consume(TokenType.EndOfLine, "Expected EOL");
+            return new InputNode(name, Previous().LineNumber);
+        }
+
+        private StatementNode ParseProcess()
+        {
+            var path = Consume(TokenType.String, "Expected process path").Value;
+            Consume(TokenType.Semicolon, "Expected ';'");
+            Consume(TokenType.EndOfLine, "Expected EOL");
+            return new ProcessNode(path, Previous().LineNumber);
+        }
+
+        private StatementNode ParseWriteFile()
+        {
+            var content = ParseExpression();
+            Consume(TokenType.To, "Expected 'to'");
+            var path = Consume(TokenType.String, "Expected file path").Value;
+
+            if (path.StartsWith("\"") && path.EndsWith("\""))
             {
-                sw.WriteLine(line);
+                path = path.Substring(1, path.Length - 2);
             }
+            Consume(TokenType.Semicolon, "Expected ';'");
+            Consume(TokenType.EndOfLine, "Expected EOL");
+            return new WriteFileNode(content, path, Previous().LineNumber);
         }
 
-        // --- Compile Nim code ---
-        Console.WriteLine("Compiling with Nim...");
-
-        var psi = new ProcessStartInfo();
-        psi.FileName = @"nim-2.2.6\bin\nim.exe";
-
-        psi.Arguments =
-            @"c --gcc.exe=""C:\TDM-GCC-64\bin\gcc.exe"" " +
-            @"--linker.exe=""C:\TDM-GCC-64\bin\ld.exe"" " +
-            @"-d:release --hints:off --nimcache=.nimcache temp.nim";
-
-        psi.EnvironmentVariables["PATH"] =
-            @"C:\TDM-GCC-64\bin;" +
-            @"C:\TDM-GCC-64\x86_64-w64-mingw32\bin;" +
-            Environment.GetEnvironmentVariable("PATH");
-
-
-        psi.WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory;
-        psi.UseShellExecute = false;
-        psi.RedirectStandardOutput = true;
-        psi.RedirectStandardError = true;
-        psi.CreateNoWindow = true;
-
-        var process = new Process();
-        process.StartInfo = psi;
-
-        process.Start();
-
-        string output = process.StandardOutput.ReadToEnd();
-        string error = process.StandardError.ReadToEnd();
-
-        process.WaitForExit();
-
-        Console.WriteLine(" ");
-        if (!string.IsNullOrEmpty(output))
-            Console.WriteLine(output);
-        if (!string.IsNullOrEmpty(error))
-            Console.WriteLine(error);
-
-        if (File.Exists(exeFile))
+        private StatementNode ParseTypeConversion()
         {
-            Console.WriteLine($"Compilation finished: {exeFile}");
+            var src = Consume(TokenType.Identifier, "Expected source variable name").Value;
+            Consume(TokenType.To, "Expected 'to'");
+            Consume(TokenType.Text, "Expected 'text'");
+            Consume(TokenType.As, "Expected 'as'");
+            var target = Consume(TokenType.Identifier, "Expected target variable name").Value;
+            Consume(TokenType.Semicolon, "Expected ';'");
+            Consume(TokenType.EndOfLine, "Expected EOL");
+            return new TypeConversionNode(src, target, Previous().LineNumber);
         }
-        else if (error.Contains("ERROR"))
+
+        private ExpressionNode ParseExpression()
         {
-            Console.WriteLine("Compilation failed.");
+            var left = ParseTerm();
+
+            while (Match(TokenType.Plus, TokenType.Minus))
+            {
+                var op = Previous().Value;
+                var right = ParseTerm();
+                left = new BinaryOperationNode(left, op, right, Previous().LineNumber);
+            }
+
+            if (Match(TokenType.CombinedWith))
+            {
+                var right = ParseExpression();
+                left = new ConcatenationExpressionNode(left, right, Previous().LineNumber);
+            }
+
+            return left;
         }
+
+        private ExpressionNode ParseTerm()
+        {
+            var left = ParseFactor();
+
+            while (Match(TokenType.TimesOp, TokenType.DividedBy))
+            {
+                var op = Previous().Value;
+                var right = ParseFactor();
+                left = new BinaryOperationNode(left, op, right, Previous().LineNumber);
+            }
+
+            return left;
+        }
+
+        private ExpressionNode ParseFactor()
+        {
+            if (Match(TokenType.Minus))
+            {
+                var right = ParseFactor();
+                return new BinaryOperationNode(new LiteralNode("0", "number", Previous().LineNumber), "-", right, Previous().LineNumber);
+            }
+
+            return ParsePrimary();
+        }
+
+        private ExpressionNode ParsePrimary()
+        {
+            if (Match(TokenType.Number)) return new LiteralNode(Previous().Value, "number", Previous().LineNumber);
+            if (Match(TokenType.String)) return new LiteralNode(Previous().Value, "string", Previous().LineNumber);
+            if (Match(TokenType.Boolean)) return new LiteralNode(Previous().Value, "boolean", Previous().LineNumber);
+            if (Match(TokenType.Identifier)) return new VariableNode(Previous().Value, Previous().LineNumber);
+            throw new Exception($"Expected expression (number, string, boolean, or identifier) at line {Peek().LineNumber}");
+        }
+
+        private bool Match(params TokenType[] types) { foreach (var t in types) if (Check(t)) { Advance(); return true; } return false; }
+        private Token Consume(TokenType type, string message) => Check(type) ? Advance() : throw new Exception(message + $" at line {Peek().LineNumber}");
+        private bool Check(TokenType type) => !IsAtEnd() && Peek().Type == type;
+        private Token Advance() { if (!IsAtEnd()) _current++; return Previous(); }
+        private bool IsAtEnd() => _current >= _tokens.Count;
+        private Token Peek() => _tokens[_current];
+        private Token Previous() => _tokens[_current - 1];
     }
 
-    static void InitializeNimCode()
+    class NimCodeGenerator : IAstVisitor<string>
     {
-        nimCode.Add("import os");
-        nimCode.Add("import strutils");
-        nimCode.Add("import strformat");
-        nimCode.Add("import times");
-        nimCode.Add("import streams");
-        nimCode.Add("");
-    }
+        private readonly List<string> _code = new List<string>();
+        private readonly Dictionary<string, string> _variableTypes = new Dictionary<string, string>();
+        private int _indentLevel = 0;
+        private int _uniqueId = 0;
 
-    // --- Core compilation logic for a block of code ---
-    static void CompileCodeBlock(List<string> lines, int indentLevel)
-    {
-        string indent = new string(' ', indentLevel);
-        var blockEndStack = new Stack<string>();
-        var endIfStack = new Stack<string>();
-        var elseStack = new Stack<string>();
-        var loopLabelStack = new Stack<string>();
-        int prevIndent = indentLevel;
-
-        for (int i = 0; i < lines.Count; i++)
+        public string GenerateCode(ProgramNode program)
         {
-            string line = lines[i];
-            if (string.IsNullOrWhiteSpace(line)) continue;
-
-            int commentIndex = line.IndexOf('#');
-            if (commentIndex != -1)
-            {
-                line = line.Substring(0, commentIndex);
-            }
-
-            line = line.Trim();
-            if (string.IsNullOrWhiteSpace(line)) continue;
-            if (line.StartsWith("#")) continue;
-
-            if (line == "[" || line == "]") continue;
-
-            int indentSpaces = line.Length - line.TrimStart().Length;
-            string trimmed = line.Trim();
-
-            // Handle dedent (closing blocks)
-            while (indentSpaces < prevIndent)
-            {
-                if (endIfStack.Count > 0)
-                {
-                    string endIfLabel = endIfStack.Pop();
-                }
-                prevIndent -= 4;
-            }
-            prevIndent = indentSpaces;
-
-            // --- Variable assignment with number ---
-            var mSetNum = Regex.Match(trimmed, @"^set (\w+) to (\d+)\.$");
-            if (mSetNum.Success)
-            {
-                string varName = mSetNum.Groups[1].Value;
-                string value = mSetNum.Groups[2].Value;
-                if (!variables.ContainsKey(varName)) { Console.WriteLine($"Error: variable '{varName}' not defined."); return; }
-                nimCode.Add($"{indent}{varName} = {value}");
-                continue;
-            }
-
-            // --- Math operations: add/subtract/multiply/divide number to/from/by variable ---
-            var mMathOp = Regex.Match(trimmed, @"^(add|subtract|multiply|divide)\s+(\d+|\w+)\s+(to|from|by)\s+(\w+)\.$");
-            if (mMathOp.Success)
-            {
-                string op = mMathOp.Groups[1].Value;
-                string value = mMathOp.Groups[2].Value;
-                string preposition = mMathOp.Groups[3].Value;
-                string varName = mMathOp.Groups[4].Value;
-
-                if (!variables.ContainsKey(varName))
-                {
-                    Console.WriteLine($"Error: variable '{varName}' not defined.");
-                    return;
-                }
-
-                // Check if value is a variable or literal
-                bool valueIsVariable = variables.ContainsKey(value);
-
-                switch (op)
-                {
-                    case "add":
-                        if (valueIsVariable)
-                            nimCode.Add($"{indent}{varName} += {value}");
-                        else
-                            nimCode.Add($"{indent}{varName} += {value}");
-                        break;
-                    case "subtract":
-                        if (valueIsVariable)
-                            nimCode.Add($"{indent}{varName} -= {value}");
-                        else
-                            nimCode.Add($"{indent}{varName} -= {value}");
-                        break;
-                    case "multiply":
-                        if (valueIsVariable)
-                            nimCode.Add($"{indent}{varName} *= {value}");
-                        else
-                            nimCode.Add($"{indent}{varName} *= {value}");
-                        break;
-                    case "divide":
-                        if (valueIsVariable)
-                            nimCode.Add($"{indent}{varName} = {varName} div {value}");
-                        else
-                            nimCode.Add($"{indent}{varName} = {varName} div {value}");
-                        break;
-                }
-                continue;
-            }
-
-            // --- String concatenation ---
-            var mStringConcat = Regex.Match(trimmed, @"^set (\w+) to (\w+) combined with (\w+)\.$");
-            if (mStringConcat.Success)
-            {
-                string destVar = mStringConcat.Groups[1].Value;
-                string srcVar1 = mStringConcat.Groups[2].Value;
-                string srcVar2 = mStringConcat.Groups[3].Value;
-
-                if (!variables.ContainsKey(destVar) || !variables.ContainsKey(srcVar1) || !variables.ContainsKey(srcVar2))
-                {
-                    Console.WriteLine($"Error in string concatenation: one or more variables not defined.");
-                    return;
-                }
-
-                nimCode.Add($"{indent}{destVar} = {srcVar1} & {srcVar2}");
-                continue;
-            }
-
-            // --- Print variable ---
-            var mPrint = Regex.Match(trimmed, @"^print (\w+)\.$");
-            if (mPrint.Success)
-            {
-                string varName = mPrint.Groups[1].Value;
-                if (!variables.ContainsKey(varName)) { Console.WriteLine($"Error: variable '{varName}' not defined."); return; }
-                nimCode.Add($"{indent}echo {varName}");
-                continue;
-            }
-
-            // --- Print string literal ---
-            var mPrintStr = Regex.Match(trimmed, @"^print ""(.*)""\.$");
-            if (mPrintStr.Success)
-            {
-                string text = mPrintStr.Groups[1].Value;
-                nimCode.Add($"{indent}echo \"{text}\"");
-                continue;
-            }
-
-            // --- Function call ---
-            var mRunFunc = Regex.Match(trimmed, @"^run function (\w+)\.$");
-            if (mRunFunc.Success)
-            {
-                string funcName = mRunFunc.Groups[1].Value;
-                if (!functionBodies.ContainsKey(funcName))
-                {
-                    Console.WriteLine($"Error: function '{funcName}' is not defined.");
-                    return;
-                }
-                nimCode.Add($"{indent}{funcName}()");
-                continue;
-            }
-
-            // --- Variable definition (skip in compilation, already handled) ---
-            var mSet = Regex.Match(trimmed, @"^define (\w+) as (.+)\.$");
-            if (mSet.Success) continue;
-
-            // --- Wait/sleep ---
-            var mWait = Regex.Match(trimmed, @"^wait for (\d+) seconds\.$");
-            if (mWait.Success)
-            {
-                int seconds = int.Parse(mWait.Groups[1].Value);
-                nimCode.Add($"{indent}sleep({seconds * 1000})");
-                continue;
-            }
-
-            // --- Math operations with numbers: set var to num op num ---
-            var mMathWithNumbers = Regex.Match(trimmed, @"^set (\w+) to (\d+) (times|plus|minus|divided by) (\d+)\.$");
-            if (mMathWithNumbers.Success)
-            {
-                string destVar = mMathWithNumbers.Groups[1].Value;
-                string num1 = mMathWithNumbers.Groups[2].Value;
-                string op = mMathWithNumbers.Groups[3].Value;
-                string num2 = mMathWithNumbers.Groups[4].Value;
-
-                if (!variables.ContainsKey(destVar))
-                {
-                    Console.WriteLine($"Error: destination variable '{destVar}' not defined.");
-                    return;
-                }
-
-                string nimOp = ConvertOperator(op);
-                nimCode.Add($"{indent}{destVar} = {num1} {nimOp} {num2}");
-                continue;
-            }
-
-            // --- Math operations with variables: set var to var op var ---
-            var mVarMath = Regex.Match(trimmed, @"^set (\w+) to (\w+) (times|plus|minus|divided by) (\w+)\.$");
-            if (mVarMath.Success)
-            {
-                string destVar = mVarMath.Groups[1].Value;
-                string srcVar1 = mVarMath.Groups[2].Value;
-                string op = mVarMath.Groups[3].Value;
-                string srcVar2 = mVarMath.Groups[4].Value;
-
-                if (!variables.ContainsKey(destVar) || !variables.ContainsKey(srcVar1) || !variables.ContainsKey(srcVar2))
-                {
-                    Console.WriteLine($"Error in variable-to-variable math: one or more variables not defined.");
-                    return;
-                }
-
-                string nimOp = ConvertOperator(op);
-                nimCode.Add($"{indent}{destVar} = {srcVar1} {nimOp} {srcVar2}");
-                continue;
-            }
-
-            // --- Mixed math operations ---
-            var mMixedMath = Regex.Match(trimmed, @"^set (\w+) to (\w+|\d+) (times|plus|minus|divided by) (\w+|\d+)\.$");
-            if (mMixedMath.Success)
-            {
-                string destVar = mMixedMath.Groups[1].Value;
-                string operand1 = mMixedMath.Groups[2].Value;
-                string op = mMixedMath.Groups[3].Value;
-                string operand2 = mMixedMath.Groups[4].Value;
-
-                if (!variables.ContainsKey(destVar))
-                {
-                    Console.WriteLine($"Error: destination variable '{destVar}' not defined.");
-                    return;
-                }
-
-                string nimOp = ConvertOperator(op);
-                nimCode.Add($"{indent}{destVar} = {operand1} {nimOp} {operand2}");
-                continue;
-            }
-
-            // --- Boolean assignment ---
-            var mSetBool = Regex.Match(trimmed, @"^set (\w+) to (true|false)\.$");
-            if (mSetBool.Success)
-            {
-                string varName = mSetBool.Groups[1].Value;
-                string value = mSetBool.Groups[2].Value;
-                if (!variables.ContainsKey(varName)) { Console.WriteLine($"Error: variable '{varName}' not defined."); return; }
-                nimCode.Add($"{indent}{varName} = {value}");
-                continue;
-            }
-
-            // --- Division operation ---
-            var mDivVarByNum = Regex.Match(trimmed, @"^divide (\w+) by (\d+)\.$");
-            if (mDivVarByNum.Success)
-            {
-                string varName = mDivVarByNum.Groups[1].Value;
-                string value = mDivVarByNum.Groups[2].Value;
-                if (!variables.ContainsKey(varName)) { Console.WriteLine($"Error: variable '{varName}' not defined."); return; }
-                nimCode.Add($"{indent}{varName} = {varName} div {value}");
-                continue;
-            }
-
-            // --- If statement ---
-            var mIf = Regex.Match(trimmed, @"^if (.+):$");
-            if (mIf.Success)
-            {
-                string condition = mIf.Groups[1].Value;
-                string nimCondition = ConvertCondition(condition);
-                nimCode.Add($"{indent}if {nimCondition}:");
-                endIfStack.Push("endif");
-                continue;
-            }
-
-            // --- Else if statement ---
-            var mElseIf = Regex.Match(trimmed, @"^else if (.+):$");
-            if (mElseIf.Success)
-            {
-                if (endIfStack.Count == 0) { Console.WriteLine($"Error: 'else if' without 'if'."); return; }
-                string condition = mElseIf.Groups[1].Value;
-                string nimCondition = ConvertCondition(condition);
-                nimCode.Add($"{indent}elif {nimCondition}:");
-                continue;
-            }
-
-            // --- Else statement ---
-            var mElse = Regex.Match(trimmed, @"^else:$");
-            if (mElse.Success)
-            {
-                if (endIfStack.Count == 0) { Console.WriteLine($"Error: 'else' without 'if'."); return; }
-                nimCode.Add($"{indent}else:");
-                continue;
-            }
-
-            // --- Repeat loop ---
-            var mRepeat = Regex.Match(trimmed, @"^repeat (\d+) times$");
-            if (mRepeat.Success)
-            {
-                int count = int.Parse(mRepeat.Groups[1].Value);
-                string loopVar = $"i{uniqueId++}";
-                nimCode.Add($"{indent}for {loopVar} in 1..{count}:");
-                blockEndStack.Push("endfor");
-                i++; // Skip the opening bracket
-                continue;
-            }
-
-            // --- Block end ---
-            if (trimmed == "]")
-            {
-                if (blockEndStack.Count > 0)
-                {
-                    blockEndStack.Pop();
-                }
-                continue;
-            }
-
-            // --- Console input ---
-            var mInput = Regex.Match(trimmed, @"^store console input in (\w+)\.$");
-            if (mInput.Success)
-            {
-                string varName = mInput.Groups[1].Value;
-                if (!variables.ContainsKey(varName))
-                {
-                    Console.WriteLine($"Error: variable '{varName}' not defined.");
-                    return;
-                }
-
-                if (variableTypes.ContainsKey(varName) && variableTypes[varName] == "string")
-                {
-                    nimCode.Add($"{indent}{varName} = readLine(stdin)");
-                }
-                else
-                {
-                    nimCode.Add($"{indent}{varName} = parseInt(readLine(stdin))");
-                }
-                continue;
-            }
-
-            // --- Run process ---
-            var mRunProcess = Regex.Match(trimmed, @"^run process ""(.*)""\.$");
-            if (mRunProcess.Success)
-            {
-                string processPath = mRunProcess.Groups[1].Value;
-                nimCode.Add($"{indent}discard execShellCmd(\"{processPath}\")");
-                continue;
-            }
-
-            // --- Write to file ---
-            var mWriteToFile = Regex.Match(trimmed, @"^write (""(.+)""|(\w+)) to ""(.+)""\.$");
-            if (mWriteToFile.Success)
-            {
-                string quotedText = mWriteToFile.Groups[2].Value;
-                string varName = mWriteToFile.Groups[3].Value;
-                string filePath = mWriteToFile.Groups[4].Value;
-
-                bool isQuotedText = !string.IsNullOrEmpty(quotedText);
-                string content = isQuotedText ? $"\"{quotedText}\"" : varName;
-
-                // Create directory if it doesn't exist
-                string dirPath = Path.GetDirectoryName(filePath);
-                if (!string.IsNullOrEmpty(dirPath))
-                {
-                    nimCode.Add($"{indent}createDir(\"{dirPath.Replace("\\", "\\\\")}\")");
-                }
-
-                nimCode.Add($"{indent}writeFile(\"{filePath.Replace("\\", "\\\\")}\", {content})");
-                continue;
-            }
-
-            // --- Convert number to string ---
-            var mTurnToText = Regex.Match(trimmed, @"^turn (\w+) to text as (\w+)\.$");
-            if (mTurnToText.Success)
-            {
-                string sourceVar = mTurnToText.Groups[1].Value;
-                string targetVar = mTurnToText.Groups[2].Value;
-
-                if (!variables.ContainsKey(sourceVar))
-                {
-                    Console.WriteLine($"Error: variable '{sourceVar}' not defined.");
-                    return;
-                }
-
-                if (!variables.ContainsKey(targetVar))
-                {
-                    Console.WriteLine($"Error: variable '{targetVar}' not defined.");
-                    return;
-                }
-
-                nimCode.Add($"{indent}{targetVar} = $({sourceVar})");
-                continue;
-            }
-
-            Console.WriteLine($"Syntax error: unknown command '{trimmed}'");
-            return;
+            _code.Add("import os, strutils, strformat, streams");
+            _code.Add("");
+            foreach (var v in program.GlobalVariables) v.Accept(this);
+            _code.Add("");
+            foreach (var f in program.Functions) f.Accept(this);
+            _code.Add("");
+            _code.Add("proc main() =");
+            _indentLevel++;
+            foreach (var s in program.MainStatements) s.Accept(this);
+            _indentLevel--;
+            _code.Add("main()");
+            return string.Join("\n", _code);
         }
-    }
 
-    // --- Helper method to convert operators to Nim syntax ---
-    static string ConvertOperator(string op)
-    {
-        switch (op)
+        private string Indent() => new string(' ', _indentLevel * 2);
+
+        public string Visit(ProgramNode n) => throw new NotImplementedException();
+        public string Visit(VariableDeclarationNode n)
         {
-            case "times": return "*";
-            case "plus": return "+";
-            case "minus": return "-";
-            case "divided by": return "div";
-            default: return op;
+            string nimType = n.Type switch { "string" => "string", "boolean" => "bool", "number" => "int", _ => throw new Exception($"Unknown type: {n.Type}") };
+            _variableTypes[n.Name] = nimType;
+            _code.Add($"{Indent()}var {n.Name}: {nimType} = {n.Value}");
+            return "";
         }
-    }
-
-    // --- Helper method to convert conditions to Nim syntax ---
-    static string ConvertCondition(string condition)
-    {
-        // Boolean condition: "x is true"
-        var mBool = Regex.Match(condition, @"(\w+) is (true|false)$");
-        if (mBool.Success)
+        public string Visit(FunctionDefinitionNode n)
         {
-            string varName = mBool.Groups[1].Value;
-            string boolValue = mBool.Groups[2].Value;
-            if (boolValue == "true")
-                return varName;
+            _code.Add($"{Indent()}proc {n.Name}() =");
+            _indentLevel++;
+            foreach (var s in n.Body) s.Accept(this);
+            _indentLevel--;
+            if (n.Body.Count == 0) _code.Add($"{Indent()}  discard");
+            _code.Add("");
+            return "";
+        }
+        public string Visit(AssignmentNode n) { _code.Add($"{Indent()}{n.VariableName} = {n.Value.Accept(this)}"); return ""; }
+        public string Visit(CompoundAssignmentNode n)
+        {
+            string value = n.Value.Accept(this);
+            if (n.Operator == "div=") _code.Add($"{Indent()}{n.VariableName} = {n.VariableName} div {value}");
+            else _code.Add($"{Indent()}{n.VariableName} {n.Operator} {value}");
+            return "";
+        }
+        public string Visit(PrintNode n) { _code.Add($"{Indent()}echo {n.Value.Accept(this)}"); return ""; }
+        public string Visit(IfNode n)
+        {
+            _code.Add($"{Indent()}if {n.Condition.Accept(this)}:");
+            _indentLevel++;
+            foreach (var s in n.ThenStatements) s.Accept(this);
+            _indentLevel--;
+
+            foreach (var (condition, statements) in n.ElseIfBranches)
+            {
+                _code.Add($"{Indent()}elif {condition.Accept(this)}:");
+                _indentLevel++;
+                foreach (var s in statements) s.Accept(this);
+                _indentLevel--;
+            }
+
+            if (n.ElseStatements != null)
+            {
+                _code.Add($"{Indent()}else:");
+                _indentLevel++;
+                foreach (var s in n.ElseStatements) s.Accept(this);
+                _indentLevel--;
+            }
+            return "";
+        }
+        public string Visit(RepeatNode n)
+        {
+            string count = n.Count.Accept(this);
+            string loopVar = $"i{_uniqueId++}";
+            _code.Add($"{Indent()}for {loopVar} in 1..{count}:");
+            _indentLevel++;
+            foreach (var s in n.Body) s.Accept(this);
+            _indentLevel--;
+            return "";
+        }
+        public string Visit(FunctionCallNode n) { _code.Add($"{Indent()}{n.FunctionName}()"); return ""; }
+        public string Visit(WaitNode n) { _code.Add($"{Indent()}sleep(int({n.Seconds.Accept(this)} * 1000))"); return ""; }
+        public string Visit(InputNode n)
+        {
+            string varType = _variableTypes.GetValueOrDefault(n.VariableName, "string");
+            if (varType == "string")
+                _code.Add($"{Indent()}{n.VariableName} = readLine(stdin)");
             else
-                return $"not {varName}";
+                _code.Add($"{Indent()}{n.VariableName} = parseInt(readLine(stdin))");
+            return "";
         }
-
-        // Comparison condition: "x is equal to y"
-        var mCompare = Regex.Match(condition, @"(\w+) is (equal to|not equal to|greater than|less than) (\w+|\d+)");
-        if (mCompare.Success)
+        public string Visit(ProcessNode n) { _code.Add($"{Indent()}discard execShellCmd({n.ProcessPath})"); return ""; }
+        public string Visit(WriteFileNode n)
         {
-            string var1 = mCompare.Groups[1].Value;
-            string op = mCompare.Groups[2].Value;
-            string var2 = mCompare.Groups[3].Value;
-
-            string nimOp = "";
-            switch (op)
-            {
-                case "equal to": nimOp = "=="; break;
-                case "not equal to": nimOp = "!="; break;
-                case "greater than": nimOp = ">"; break;
-                case "less than": nimOp = "<"; break;
-            }
-
-            return $"{var1} {nimOp} {var2}";
+            string content = n.Content.Accept(this);
+            string filePath = n.FilePath.Replace("\\", "\\\\");
+            _code.Add($"{Indent()}writeFile(\"{filePath}\", {content})");
+            return "";
         }
-
-        return condition; // Return as-is if no pattern matched
-    }
-
-    // --- Parses the file to find all functions and global variables ---
-    static void ParseFunctionsAndGlobals(string[] lines)
-    {
-        string currentFunctionName = null;
-        List<string> currentFunctionBody = null;
-        bool inFunction = false;
-
-        foreach (var line in lines)
+        public string Visit(TypeConversionNode n) { _code.Add($"{Indent()}{n.TargetVariable} = ${n.SourceVariable}"); return ""; }
+        public string Visit(BinaryOperationNode n)
         {
-            string trimmed = line.Trim();
-            if (string.IsNullOrWhiteSpace(trimmed) || trimmed.StartsWith("#")) continue;
-
-            if (trimmed.StartsWith("define function named"))
+            string left = n.Left.Accept(this);
+            string right = n.Right.Accept(this);
+            string op = n.Operator switch
             {
-                currentFunctionName = Regex.Match(trimmed, @"^define function named (\w+)$").Groups[1].Value;
-                currentFunctionBody = new List<string>();
-                inFunction = true;
-
-                // Start function definition in Nim
-                functionCode.Add($"proc {currentFunctionName}() =");
-                continue;
-            }
-
-            if (inFunction)
-            {
-                if (trimmed == "]")
-                {
-                    functionBodies[currentFunctionName] = currentFunctionBody;
-
-                    // Compile function body
-                    CompileFunctionBody(currentFunctionBody, currentFunctionName);
-
-                    inFunction = false;
-                    currentFunctionName = null;
-                    currentFunctionBody = null;
-                    functionCode.Add("");
-                }
-                else
-                {
-                    currentFunctionBody.Add(line);
-                }
-                continue;
-            }
-
-            var mSet = Regex.Match(trimmed, @"^define (\w+) as (.+)\.$");
-            if (mSet.Success)
-            {
-                string varName = mSet.Groups[1].Value;
-                string valueStr = mSet.Groups[2].Value;
-                variables[varName] = varName;
-
-                if (valueStr.StartsWith("\"") && valueStr.EndsWith("\""))
-                {
-                    variableTypes[varName] = "string";
-                    string text = valueStr.Trim('"');
-                    nimCode.Add($"var {varName}: string = \"{text}\"");
-                }
-                else if (valueStr == "true")
-                {
-                    variableTypes[varName] = "bool";
-                    nimCode.Add($"var {varName}: bool = true");
-                }
-                else if (valueStr == "false")
-                {
-                    variableTypes[varName] = "bool";
-                    nimCode.Add($"var {varName}: bool = false");
-                }
-                else
-                {
-                    variableTypes[varName] = "int";
-                    nimCode.Add($"var {varName}: int = {valueStr}");
-                }
-            }
+                "equal to" => "==",
+                "not equal to" => "!=",
+                "greater than" => ">",
+                "less than" => "<",
+                "plus" => "+",
+                "minus" => "-",
+                "times" => "*",
+                "divided by" => "div",
+                _ => n.Operator
+            };
+            return $"{left} {op} {right}";
         }
-
-        nimCode.Add("");
-    }
-
-    // --- Compile function body separately ---
-    static void CompileFunctionBody(List<string> functionBody, string functionName)
-    {
-        var bodyLines = functionBody.Where(l => l.Trim() != "[" && l.Trim() != "]").ToList();
-
-        // Add function body with proper indentation
-        foreach (string line in bodyLines)
+        public string Visit(ConcatenationExpressionNode n) => $"{n.Left.Accept(this)} & {n.Right.Accept(this)}";
+        public string Visit(VariableNode n) => n.Name;
+        public string Visit(LiteralNode n) => n.Value;
+        public string Visit(BlockNode n)
         {
-            string trimmed = line.Trim();
-            if (string.IsNullOrWhiteSpace(trimmed)) continue;
-
-            // Skip function definition line
-            if (trimmed.StartsWith("define function named")) continue;
-
-            // Process the line similar to main code but with function context
-            ProcessFunctionLine(trimmed, 2);
+            foreach (var statement in n.Statements) statement.Accept(this);
+            return "";
+        }
+        public string Visit(ReadFileNode n)
+        {
+            string filePath = $"\"{n.FilePath}\"";
+            _code.Add($"{Indent()}{n.VariableName} = readFile({filePath})");
+            return "";
         }
     }
 
-    static void ProcessFunctionLine(string line, int indentLevel)
+    class NimCompiler
     {
-        string indent = new string(' ', indentLevel);
+        private readonly Configuration _config;
+        public NimCompiler(Configuration config) { _config = config; }
+        public void Compile(string nimCode)
+        {
+            File.WriteAllText(_config.NimFile, nimCode);
+            Console.WriteLine("Compiling with Nim...");
+            var psi = new ProcessStartInfo();
+            psi.FileName = _config.NimCompilerPath;
+            psi.WorkingDirectory = _config.BaseDirectory;
+            string nimFileName = Path.GetFileName(_config.NimFile);
+            psi.Arguments = $"c -d:release --hints:off --nimcache:.nimcache {nimFileName}";
+            string gccDir = @"C:\TDM-GCC-64\bin";
+            psi.EnvironmentVariables["PATH"] = gccDir + ";" + Path.Combine(gccDir, "x86_64-w64-mingw32", "bin") + ";" + Environment.GetEnvironmentVariable("PATH");
+            psi.UseShellExecute = false; psi.RedirectStandardOutput = true; psi.RedirectStandardError = true; psi.CreateNoWindow = true;
+            var process = new Process { StartInfo = psi };
+            process.Start();
+            string output = process.StandardOutput.ReadToEnd(); string error = process.StandardError.ReadToEnd(); process.WaitForExit();
+            if (!string.IsNullOrEmpty(output)) Console.WriteLine(output);
+            if (!string.IsNullOrEmpty(error)) Console.WriteLine(error);
+            if (File.Exists(_config.ExeFile)) Console.WriteLine($"Compilation finished: {_config.ExeFile}");
+            else if (error.Contains("ERROR")) throw new Exception("Compilation failed.");
+        }
+    }
 
-        // This is a simplified version - you would need to implement the same
-        // pattern matching as in CompileCodeBlock but for function context
-        // For now, just echo the basic structure
-        functionCode.Add($"{indent}# {line}");
+    class HumanScriptTranspiler
+    {
+        private readonly Configuration _config;
+        public HumanScriptTranspiler(Configuration config) { _config = config; }
+        public void Transpile()
+        {
+            var lines = File.ReadAllLines(_config.InputFile);
+            var lexer = new Lexer(lines);
+            var tokens = lexer.Tokenize();
+            var parser = new Parser(tokens);
+            var ast = parser.Parse();
+            var codeGenerator = new NimCodeGenerator();
+            var nimCode = codeGenerator.GenerateCode(ast);
+            var compiler = new NimCompiler(_config);
+            compiler.Compile(nimCode);
+        }
     }
 }
-

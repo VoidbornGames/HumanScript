@@ -14,11 +14,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\Naboodi\\source\\repos\\HumanScript\\HumanScript\\HumanScript.csproj",
+      "projectUniqueName": "C:\\Games\\HumanScript\\HumanScript\\HumanScript\\HumanScript.csproj",
       "projectName": "HumanScript",
-      "projectPath": "C:\\Users\\Naboodi\\source\\repos\\HumanScript\\HumanScript\\HumanScript.csproj",
+      "projectPath": "C:\\Games\\HumanScript\\HumanScript\\HumanScript\\HumanScript.csproj",
       "packagesPath": "C:\\Users\\Naboodi\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\Naboodi\\source\\repos\\HumanScript\\HumanScript\\obj\\",
+      "outputPath": "C:\\Games\\HumanScript\\HumanScript\\HumanScript\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "E:\\Apps\\VS Shared SDKs\\NuGetPackages"
@@ -33,6 +33,7 @@
       ],
       "sources": {
         "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+        "C:\\Users\\Naboodi\\AppData\\Roaming\\Cosmos User Kit\\packages\\": {},
         "https://api.nuget.org/v3/index.json": {}
       },
       "frameworks": {
@@ -51,7 +52,7 @@
         "auditLevel": "low",
         "auditMode": "direct"
       },
-      "SdkAnalysisLevel": "9.0.300"
+      "SdkAnalysisLevel": "10.0.100"
     },
     "frameworks": {
       "net8.0": {
@@ -72,7 +73,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.304/PortableRuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.100/PortableRuntimeIdentifierGraph.json"
       }
     }
   }
