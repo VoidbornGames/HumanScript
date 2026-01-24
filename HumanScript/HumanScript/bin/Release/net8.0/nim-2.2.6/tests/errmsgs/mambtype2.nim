@@ -1,1 +1,0 @@
-type Y* = object

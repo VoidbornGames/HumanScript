@@ -1,1 +1,0 @@
-raise (ref Exception)(msg: "something")
