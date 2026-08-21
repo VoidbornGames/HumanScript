@@ -17,18 +17,18 @@ out/
 *.pdb
 *.o
 *.obj
+*.lib
+*.exp
+*.nupkg
 
 *.hs.out
-temp.nim
-
-*.nupkg
-**/packages/*
-!**/packages/build/
-
 TestResults/
 *.trx
 
+.mimosa/
+.zcode/
+AGENTS.md
+
 .DS_Store
 Thumbs.db
-
 *.log

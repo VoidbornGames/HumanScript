@@ -1,22 +1,45 @@
 using System.Diagnostics;
-using HumanScript;
+using HSharp;
 
 if (args.Length < 1)
 {
-    Console.Error.WriteLine("usage: hsc <source.hs> [-o output] [-- <extra clang args>]");
+    Console.Error.WriteLine("usage: hsc <source.hs> [-o output] [-platform win64|linux64|osx64|linux-arm64|osx-arm64] [-- <extra clang args>]");
     return 1;
 }
 
 bool isWindows = OperatingSystem.IsWindows();
 
 string sourcePath = args[0];
-string outputPath = Path.GetFileNameWithoutExtension(sourcePath) + (isWindows ? ".exe" : "");
 var extraClangArgs = new List<string>();
+string? platform = null;
+string? givenOutput = null;
 for (int i = 1; i < args.Length; i++)
 {
-    if (args[i] == "-o" && i + 1 < args.Length) { outputPath = args[++i]; continue; }
+    if (args[i] == "-o" && i + 1 < args.Length) { givenOutput = args[++i]; continue; }
+    if (args[i] == "-platform" && i + 1 < args.Length) { platform = args[++i]; continue; }
     extraClangArgs.Add(args[i]);
 }
+
+// no -platform means build for whatever we're running on
+string? triple = platform switch
+{
+    null => LLVM.PtrToStringAndFree(LLVM.LLVMGetDefaultTargetTriple()),
+    "win64" => "x86_64-pc-windows-msvc",
+    "linux64" => "x86_64-unknown-linux-gnu",
+    "osx64" => "x86_64-apple-darwin",
+    "linux-arm64" => "aarch64-unknown-linux-gnu",
+    "osx-arm64" => "aarch64-apple-darwin",
+    _ => null
+};
+
+if (triple == null)
+{
+    Console.Error.WriteLine($"error: unknown platform '{platform}' (win64, linux64, osx64, linux-arm64, osx-arm64)");
+    return 1;
+}
+
+bool exeExt = triple.Contains("windows");
+string outputPath = givenOutput ?? (Path.GetFileNameWithoutExtension(sourcePath) + (exeExt ? ".exe" : ""));
 
 if (!File.Exists(sourcePath))
 {
@@ -32,8 +55,9 @@ try
 {
     var tokens = new Lexer(source).Tokenize();
     var program = new Parser(tokens).Parse();
+    new Checker().Check(program);
 
-    new CodeGen().Generate(program, objPath);
+    new CodeGen().Generate(program, objPath, triple);
 
     var psi = new ProcessStartInfo
     {
@@ -43,18 +67,21 @@ try
         UseShellExecute = false
     };
 
+    psi.ArgumentList.Add("-target");
+    psi.ArgumentList.Add(triple);
     psi.ArgumentList.Add(objPath);
     psi.ArgumentList.Add("-o");
     psi.ArgumentList.Add(outputPath);
 
-    if (!isWindows)
-    {
-        psi.ArgumentList.Add("-fuse-ld=lld-18");
-        psi.ArgumentList.Add("-static");
-    }
-    else
+    // flags follow the target, not the machine we're sitting on
+    if (exeExt)
     {
         psi.ArgumentList.Add("-llegacy_stdio_definitions");
+    }
+    else if (!triple.Contains("darwin"))
+    {
+        psi.ArgumentList.Add(isWindows ? "-fuse-ld=lld" : "-fuse-ld=lld-18");
+        psi.ArgumentList.Add("-static");
     }
     foreach (var a in extraClangArgs) psi.ArgumentList.Add(a);
 
@@ -80,6 +107,11 @@ try
     File.Delete(objPath);
     Console.WriteLine($"Compiled '{sourcePath}' -> '{outputPath}'");
     return 0;
+}
+catch (SourceError ex)
+{
+    Console.Error.WriteLine($"{sourcePath}({ex.Line},{ex.Col}): error: {ex.Message}");
+    return 1;
 }
 catch (Exception ex)
 {

@@ -1,131 +1,137 @@
-# HumanScript
+# H Sharp (H#)
 
-A programming language that reads like plain English and compiles straight to a native executable. No runtime, no VM — just LLVM doing the heavy lifting under the hood.
+A small statically-typed language that looks like C# and manages memory like Rust — compiles to a native executable through LLVM. No runtime, no VM, no garbage collector.
 
-## What changed
+## The memory model
 
-The compiler was rebuilt from the ground up:
+This is the point of the language. Values are freed exactly when they stop being used, checked at compile time:
 
-- **LLVM backend** — replaced the old Nim/C pipeline. Source now compiles directly to an object file via LLVM and links with `clang`, so there's no intermediate language to install or debug.
-- **Indentation-based blocks** — no more `[`, `]`, or semicolons. Blocks are defined by indentation, closed with `end`.
-- **New syntax** — variables use `remember x is 5`, output uses `say`/`show`, and file extension is `.hs`.
-- **Real control flow** — `if`/`otherwise`, `while`, `repeat N times`, `for every item in list`, all nestable.
-- **Functions** — declare with `to name param1 param2`, call directly by name.
-- **Lists** — `add`/`remove`/`clear`, indexing with `list[0]`, `number of list` for length.
-- **Error handling** — `try`/`catch` blocks.
-- **File I/O** — `read`, `write into`, `delete`, `exists`.
-- **Test suite** — compiler and codegen now have unit test coverage (xUnit).
+- `int`, `float`, `bool` are copied by value.
+- `string` and `list<T>` have exactly one owner. Assigning from a variable **moves** it; using it afterwards is a compile error. Use `copy(s)` when you need both.
+- A value is freed right after its **last use**, not just at scope exit — deterministic, zero runtime cost, no collector.
+- Conditional moves are handled with hidden drop flags (the same trick pre-2016 Rust used), so frees stay correct on both branches of an `if`.
+- Moving a variable declared outside a loop inside that loop is a compile error — kills the classic use-after-free case before it exists.
+- Lists own their elements. Insertion copies, remove/clear/overwrite free.
+- Function parameters are borrowed by default (read-only, can't escape). `move` parameters take ownership. Return values are owned by the caller.
+- `mem()` returns the number of live heap allocations. A well-formed program returns to 0 — every test checks this.
 
-## Requirements
+## Syntax
 
-- .NET 8 SDK (to build the compiler)
-- LLVM 18 (`libLLVM-18` / `LLVM-C.dll`)
-- `clang` (or `clang-18` on Linux/macOS) for linking
+```csharp
+var x = 10;
+var name = input("name? ");
+
+if (x > 5)
+{
+    print($"{x} is bigger than 5");
+}
+else if (x == 5)
+{
+    print("exactly 5");
+}
+else
+{
+    print("small");
+}
+
+var fruits = list<string> { "apple", "banana" };
+fruits.Add("cherry");
+fruits.Remove("banana");
+print(fruits[0]);
+print(fruits.Count);
+
+foreach (var f in fruits)
+{
+    print(f);
+}
+
+for (var i = 0; i < 10; i++)
+{
+    print(i);
+}
+
+int add(int a, int b)
+{
+    return a + b;
+}
+print(add(2, 3));
+
+var s = "hello";
+var t = s;          // moves: s is gone now
+print(t);           // fine
+// print(s);        // error: use of moved value 's'
+
+void log(move string line)
+{
+    print(line);    // takes ownership, frees it on return
+}
+
+try
+{
+    var data = read("config.txt");
+    print(data);
+}
+catch
+{
+    print("config missing");
+}
+
+write("out.txt", "saved");
+print(exists("out.txt"));
+delete("out.txt");
+print(mem());       // 0 — nothing leaked
+```
+
+Types: `int`, `float`, `bool`, `string`, `list<int>` / `list<string>`. Locals use `var` with inference; functions declare their return type and parameter types. `&&`, `||`, `!`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `+ - * / %`, `+=` and friends, `//` comments, `$"...{expr}..."` interpolation.
+
+Runtime errors (missing files, out-of-bounds indexing) route to the nearest `catch` — errors are detected at statement boundaries, and any values already created in the failing statement are cleaned up before the catch runs.
 
 ## Build
 
+Requires .NET 8 SDK, LLVM 18 (`LLVM-C.dll` / `libLLVM-18` on your PATH), and `clang` for linking.
+
 ```bash
-git clone https://github.com/your-username/HumanScript.git
-cd HumanScript
+git clone https://github.com/VoidbornGames/HSharp.git
+cd HSharp
 dotnet build
 ```
 
-## Usage
+## Use
 
 ```bash
-hsc program.hs -o program
+dotnet run --project src/HSharp/compiler -- program.hs -o program
 ./program
 ```
 
-## Syntax at a glance
+Without `-platform` the build targets whatever OS you're running on. To pick a target explicitly:
 
-**Variables**
-```
-remember x is 10
-set x to 20
-increase x by 5
-decrease x by 1
-multiply x by 2
-divide x by 2
+```bash
+dotnet run --project src/HSharp/compiler -- program.hs -platform win64
+dotnet run --project src/HSharp/compiler -- program.hs -platform linux64
+dotnet run --project src/HSharp/compiler -- program.hs -platform osx64
 ```
 
-**Output & input**
-```
-say "Hello, World!"
-show x
-ask "What's your name?" into name
-```
+(plus `linux-arm64` and `osx-arm64`). Cross-linking needs the target's C library available to clang — pass e.g. `-- --sysroot=/path/to/sysroot` for that.
 
-**Conditionals**
-```
-if x is greater than 10 then
-    say "big"
-otherwise
-    say "small"
-end
-```
+Errors point at the line and column: `program.hs(3,7): error: use of moved value 's'`.
 
-**Loops**
-```
-repeat 3 times
-    say "hi"
-end
-
-while x is less than 100
-    increase x by 1
-end
-
-for every item in my_list
-    say item
-end
-```
-
-**Functions**
-```
-to greet name
-    say name
-end
-
-greet "Alice"
-```
-
-**Lists**
-```
-remember fruits is a list
-add "apple" to fruits
-remove "apple" from fruits
-say number of fruits
-say fruits[0]
-```
-
-**Files**
-```
-write "log entry" into "log.txt"
-read "log.txt" into content
-if exists "log.txt" then
-    delete "log.txt"
-end
-```
-
-**Error handling**
-```
-try
-    read "missing.txt" into data
-catch
-    say "caught it"
-end
-```
-
-**Comments**
-```
-// this is a comment
-```
+Set `HS_DUMP_IR=1` to dump the generated LLVM IR to `%TEMP%/hs-dump.ir` when debugging the compiler.
 
 ## How it works
 
 ```
-program.hs → Lexer → Parser → AST → LLVM IR → object file → clang link → native executable
+program.hs → Lexer → Parser → Checker → CodeGen → LLVM IR → object file → clang → native executable
 ```
+
+The checker does static typing plus the ownership analysis: it tracks every move and every last use, then annotates the AST with drop points. Codegen emits LLVM IR through the C API, including a small IR-level runtime (allocation counter, list helpers, string helpers) built into each module — there is no external runtime library. All allocas are hoisted to the function entry block so loops don't grow the stack.
+
+## Tests
+
+```bash
+dotnet test
+```
+
+Compile-error coverage (moves, borrows, types) runs the checker in-process; codegen tests run the full pipeline to a verified object file.
 
 ## License
 MIT

@@ -21,7 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\HumanScript\compiler.csproj" />
+    <ProjectReference Include="..\HSharp\compiler\compiler.csproj" />
   </ItemGroup>
 
 </Project>

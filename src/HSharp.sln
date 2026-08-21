@@ -3,9 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.14.36414.22
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "compiler", "HumanScript\compiler.csproj", "{DD142072-C87C-4C57-81A9-CF99D14277F7}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "compiler", "HSharp\compiler\compiler.csproj", "{DD142072-C87C-4C57-81A9-CF99D14277F7}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HumanScript.Tests", "HumanScript.Tests\HumanScript.Tests.csproj", "{D636E65D-650C-4806-985D-05223F20F24B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HSharp.Tests", "HSharp.Tests\HSharp.Tests.csproj", "{D636E65D-650C-4806-985D-05223F20F24B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

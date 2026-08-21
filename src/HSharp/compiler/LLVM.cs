@@ -1,10 +1,10 @@
 using System.Runtime.InteropServices;
 
-namespace HumanScript;
+namespace HSharp;
 
 internal static class LLVM
 {
-    private const string Lib = "HumanScriptLLVM";
+    private const string Lib = "HSharpLLVM";
 
     static LLVM()
     {
@@ -49,6 +49,11 @@ internal static class LLVM
     [DllImport(Lib)] public static extern void LLVMInitializeX86Target();
     [DllImport(Lib)] public static extern void LLVMInitializeX86TargetMC();
     [DllImport(Lib)] public static extern void LLVMInitializeX86AsmPrinter();
+
+    [DllImport(Lib)] public static extern void LLVMInitializeAArch64TargetInfo();
+    [DllImport(Lib)] public static extern void LLVMInitializeAArch64Target();
+    [DllImport(Lib)] public static extern void LLVMInitializeAArch64TargetMC();
+    [DllImport(Lib)] public static extern void LLVMInitializeAArch64AsmPrinter();
 
 
     [DllImport(Lib)] public static extern IntPtr LLVMContextCreate();
@@ -98,6 +103,8 @@ internal static class LLVM
     [DllImport(Lib)] public static extern IntPtr LLVMBuildOr(IntPtr builder, IntPtr lhs, IntPtr rhs, string name);
     [DllImport(Lib)] public static extern IntPtr LLVMBuildXor(IntPtr builder, IntPtr lhs, IntPtr rhs, string name);
     [DllImport(Lib)] public static extern IntPtr LLVMBuildZExt(IntPtr builder, IntPtr value, IntPtr destType, string name);
+    [DllImport(Lib)] public static extern IntPtr LLVMBuildSExt(IntPtr builder, IntPtr value, IntPtr destType, string name);
+    [DllImport(Lib)] public static extern IntPtr LLVMBuildNot(IntPtr builder, IntPtr value, string name);
     [DllImport(Lib)] public static extern IntPtr LLVMBuildSelect(IntPtr builder, IntPtr cond, IntPtr thenVal, IntPtr elseVal, string name);
 
 
@@ -108,6 +115,7 @@ internal static class LLVM
     [DllImport(Lib)] public static extern IntPtr LLVMBuildCondBr(IntPtr builder, IntPtr cond, IntPtr thenBB, IntPtr elseBB);
     [DllImport(Lib)] public static extern IntPtr LLVMBuildBr(IntPtr builder, IntPtr dest);
     [DllImport(Lib)] public static extern IntPtr LLVMBuildRet(IntPtr builder, IntPtr value);
+    [DllImport(Lib)] public static extern IntPtr LLVMBuildRetVoid(IntPtr builder);
 
 
     [DllImport(Lib)] public static extern IntPtr LLVMBuildPhi(IntPtr builder, IntPtr type, string name);
@@ -133,6 +141,16 @@ internal static class LLVM
 
     [DllImport(Lib)] public static extern IntPtr LLVMGetParam(IntPtr fn, uint index);
     [DllImport(Lib)] public static extern IntPtr LLVMBuildTrunc(IntPtr builder, IntPtr value, IntPtr destType, string name);
+    [DllImport(Lib)] public static extern IntPtr LLVMBuildSRem(IntPtr builder, IntPtr lhs, IntPtr rhs, string name);
+    [DllImport(Lib)] public static extern IntPtr LLVMBuildFRem(IntPtr builder, IntPtr lhs, IntPtr rhs, string name);
+    [DllImport(Lib)] public static extern IntPtr LLVMBuildPtrToInt(IntPtr builder, IntPtr value, IntPtr destType, string name);
+    [DllImport(Lib)] public static extern IntPtr LLVMBuildIntToPtr(IntPtr builder, IntPtr value, IntPtr destType, string name);
+    [DllImport(Lib)] public static extern IntPtr LLVMStructCreateNamed(IntPtr ctx, string name);
+    [DllImport(Lib)] public static extern IntPtr LLVMStructSetBody(IntPtr structTy, IntPtr[] elemTypes, uint count, [MarshalAs(UnmanagedType.Bool)] bool packed);
+    [DllImport(Lib)] public static extern IntPtr LLVMBuildStructGEP2(IntPtr builder, IntPtr structTy, IntPtr ptr, uint idx, string name);
+    [DllImport(Lib)] public static extern IntPtr LLVMAddGlobal(IntPtr module, IntPtr type, string name);
+    [DllImport(Lib)] public static extern void LLVMSetInitializer(IntPtr globalVar, IntPtr value);
+    [DllImport(Lib)] public static extern IntPtr LLVMGetBasicBlockTerminator(IntPtr basicBlock);
 
     public static string PtrToStringAndFree(IntPtr ptr)
     {
