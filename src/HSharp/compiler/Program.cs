@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using HSharp;
 
 if (args.Length < 1)
@@ -18,6 +19,18 @@ for (int i = 1; i < args.Length; i++)
     if (args[i] == "-o" && i + 1 < args.Length) { givenOutput = args[++i]; continue; }
     if (args[i] == "-platform" && i + 1 < args.Length) { platform = args[++i]; continue; }
     extraClangArgs.Add(args[i]);
+}
+
+// clang flags never need shell metacharacters, so anything outside this
+// set is rejected before it gets anywhere near the linker
+var safeArg = new Regex("^[A-Za-z0-9_+=.,:\\/@%\" -]+$");
+foreach (var a in extraClangArgs)
+{
+    if (!safeArg.IsMatch(a))
+    {
+        Console.Error.WriteLine($"error: unsupported linker argument '{a}'");
+        return 1;
+    }
 }
 
 // no -platform means build for whatever we're running on
@@ -41,6 +54,14 @@ if (triple == null)
 bool exeExt = triple.Contains("windows");
 string outputPath = givenOutput ?? (Path.GetFileNameWithoutExtension(sourcePath) + (exeExt ? ".exe" : ""));
 
+// canonicalize before handing it to the linker; malformed paths die here
+try { outputPath = Path.GetFullPath(outputPath); }
+catch (Exception)
+{
+    Console.Error.WriteLine($"error: invalid output path '{outputPath}'");
+    return 1;
+}
+
 if (!File.Exists(sourcePath))
 {
     Console.Error.WriteLine($"error: file not found: {sourcePath}");
@@ -59,9 +80,10 @@ try
 
     new CodeGen().Generate(program, objPath, triple);
 
+    string linker = isWindows ? "clang" : "clang-18";
     var psi = new ProcessStartInfo
     {
-        FileName = isWindows ? "clang" : "clang-18",
+        FileName = linker,
         RedirectStandardError = true,
         RedirectStandardOutput = true,
         UseShellExecute = false
