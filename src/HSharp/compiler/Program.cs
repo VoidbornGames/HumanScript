@@ -80,6 +80,43 @@ try
 
     new CodeGen().Generate(program, objPath, triple);
 
+    // the runtime ships as source next to the compiler; build it once per
+    // target triple and rt.c version, then cache
+    string rtSrc = Path.Combine(AppContext.BaseDirectory, "rt.c");
+    string rtDir = Path.Combine(Path.GetTempPath(), "hsharp-rt");
+    string rtStamp = File.Exists(rtSrc) ? File.GetLastWriteTimeUtc(rtSrc).Ticks.ToString() : "0";
+    string rtObj = Path.Combine(rtDir, triple.Replace('/', '_') + "-" + rtStamp + ".o");
+    if (File.Exists(rtSrc) && !File.Exists(rtObj))
+    {
+        Directory.CreateDirectory(rtDir);
+        var rtPsi = new ProcessStartInfo
+        {
+            FileName = isWindows ? "clang" : "clang-18",
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+            UseShellExecute = false
+        };
+        rtPsi.ArgumentList.Add("-c");
+        rtPsi.ArgumentList.Add(rtSrc);
+        rtPsi.ArgumentList.Add("-target");
+        rtPsi.ArgumentList.Add(triple);
+        rtPsi.ArgumentList.Add("-D_WINSOCK_DEPRECATED_NO_WARNINGS");
+        rtPsi.ArgumentList.Add("-o");
+        rtPsi.ArgumentList.Add(rtObj);
+
+        using var rtProc = Process.Start(rtPsi)!;
+        string rtOut = rtProc.StandardOutput.ReadToEnd();
+        string rtErr = rtProc.StandardError.ReadToEnd();
+        rtProc.WaitForExit();
+        if (rtProc.ExitCode != 0)
+        {
+            Console.Error.WriteLine("error: failed to build the runtime:");
+            if (!string.IsNullOrWhiteSpace(rtOut)) Console.Error.WriteLine(rtOut);
+            if (!string.IsNullOrWhiteSpace(rtErr)) Console.Error.WriteLine(rtErr);
+            return 1;
+        }
+    }
+
     string linker = isWindows ? "clang" : "clang-18";
     var psi = new ProcessStartInfo
     {
@@ -91,6 +128,7 @@ try
 
     psi.ArgumentList.Add("-target");
     psi.ArgumentList.Add(triple);
+    if (File.Exists(rtObj)) psi.ArgumentList.Add(rtObj);
     psi.ArgumentList.Add(objPath);
     psi.ArgumentList.Add("-o");
     psi.ArgumentList.Add(outputPath);
@@ -99,6 +137,7 @@ try
     if (exeExt)
     {
         psi.ArgumentList.Add("-llegacy_stdio_definitions");
+        psi.ArgumentList.Add("-lws2_32");
     }
     else if (!triple.Contains("darwin"))
     {

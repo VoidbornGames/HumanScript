@@ -158,6 +158,18 @@ public sealed class Parser(List<Token> tokens)
                     Expect(Tok.Semi, "';'");
                     return new Return(value, line, col);
                 }
+            case Tok.KwBreak:
+                {
+                    Take();
+                    Expect(Tok.Semi, "';'");
+                    return new Break(line, col);
+                }
+            case Tok.KwContinue:
+                {
+                    Take();
+                    Expect(Tok.Semi, "';'");
+                    return new Continue(line, col);
+                }
             case Tok.KwTry:
                 {
                     Take();
@@ -347,6 +359,12 @@ public sealed class Parser(List<Token> tokens)
             string op = Take().Kind == Tok.Not ? "!" : "-";
             return new Un(op, Unary(), line, col);
         }
+        if (Check(Tok.KwAwait))
+        {
+            int line = Cur.Line, col = Cur.Col;
+            Take();
+            return new AwaitExpr(Unary(), line, col);
+        }
         return Postfix();
     }
 
@@ -386,6 +404,36 @@ public sealed class Parser(List<Token> tokens)
         return e;
     }
 
+    private Expr Lambda(int line, int col)
+    {
+        var ps = new List<Param>();
+        Expect(Tok.LParen, "'('");
+        if (!Check(Tok.RParen))
+        {
+            do
+            {
+                bool mv = Match(Tok.KwMove);
+                var pt = ParseType("lambda parameter type");
+                var pn = Expect(Tok.Ident, "lambda parameter name");
+                ps.Add(new Param(pt, pn.Text, mv, pn.Line, pn.Col));
+            } while (Match(Tok.Comma));
+        }
+        Expect(Tok.RParen, "')'");
+        Expect(Tok.FatArrow, "'=>' after lambda parameters");
+
+        var body = new List<Stmt>();
+        if (Check(Tok.LBrace))
+        {
+            body = Block();
+        }
+        else
+        {
+            var e = Expression();
+            body.Add(new Return(e, e.Line, e.Col));
+        }
+        return new LamLit(ps, body, line, col);
+    }
+
     private List<Expr> Args()
     {
         Expect(Tok.LParen, "'('");
@@ -417,7 +465,7 @@ public sealed class Parser(List<Token> tokens)
                         if (p.IsExpr)
                         {
                             var sub = new Lexer(p.Text).Tokenize();
-                            if (sub.Count != 2 || sub[0].Kind == Tok.EOF)
+                            if (sub[0].Kind == Tok.EOF)
                                 throw new SourceError(line, col, "empty '{}' in interpolated string");
                             if (sub[^1].Kind != Tok.EOF)
                                 throw new SourceError(sub[^1].Line, sub[^1].Col, "unexpected tokens in interpolated expression");
@@ -433,6 +481,12 @@ public sealed class Parser(List<Token> tokens)
             case Tok.Ident: return new Ident(Take().Text, line, col);
             case Tok.LParen:
                 {
+                    // a paren followed by a type keyword (or by ')' for the empty
+                    // parameter list) opens lambda params; expressions can't
+                    // start with either
+                    if (AtTypeStart(Peek(1)) || Check2(Tok.RParen))
+                        return Lambda(line, col);
+
                     Take();
                     var e = Expression();
                     Expect(Tok.RParen, "')'");

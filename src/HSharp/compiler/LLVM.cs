@@ -152,6 +152,14 @@ internal static class LLVM
     [DllImport(Lib)] public static extern void LLVMSetInitializer(IntPtr globalVar, IntPtr value);
     [DllImport(Lib)] public static extern IntPtr LLVMGetBasicBlockTerminator(IntPtr basicBlock);
 
+    // new pass manager, used to run default<O2> before emitting
+    [DllImport(Lib)] public static extern IntPtr LLVMCreatePassBuilderOptions();
+    [DllImport(Lib)] public static extern void LLVMDisposePassBuilderOptions(IntPtr options);
+    [DllImport(Lib)] public static extern void LLVMPassBuilderOptionsSetVerifyEach(IntPtr options, [MarshalAs(UnmanagedType.Bool)] bool verifyEach);
+    [DllImport(Lib)] public static extern IntPtr LLVMRunPasses(IntPtr module, string passes, IntPtr targetMachine, IntPtr options);
+    [DllImport(Lib)] public static extern IntPtr LLVMGetErrorMessage(IntPtr error);
+    [DllImport(Lib)] public static extern void LLVMDisposeErrorMessage(IntPtr message);
+
     public static string PtrToStringAndFree(IntPtr ptr)
     {
         if (ptr == IntPtr.Zero) return "";

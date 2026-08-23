@@ -1,5 +1,7 @@
 namespace HSharp;
 
+using System.Runtime.InteropServices;
+
 // where a value came from when an expression produced it
 enum Prov { Static, Borrow, Var, Temp }
 
@@ -58,10 +60,33 @@ public sealed class CodeGen
     private IntPtr _removeFn, _removeTy;
     private IntPtr _getcharFn, _getcharTy;
     private IntPtr _strcatFn, _strcatTy;
+    private IntPtr _atoiFn, _atoiTy;
+    private IntPtr _strncmpFn, _strncmpTy;
+    private IntPtr _strstrFn, _strstrTy;
+
+    // sockets
+    private IntPtr _tcpListenFn, _tcpListenTy;
+    private IntPtr _tcpAcceptFn, _tcpAcceptTy;
+    private IntPtr _tcpConnectFn, _tcpConnectTy;
+    private IntPtr _tcpSendFn, _tcpSendTy;
+    private IntPtr _tcpCloseFn, _tcpCloseTy;
+    private IntPtr _udpOpenFn, _udpOpenTy;
+    private IntPtr _udpSendToFn, _udpSendToTy;
+    private IntPtr _tcpLineFn, _tcpLineTy;
+    private IntPtr _udpRecvFn, _udpRecvTy;
 
     // prelude helpers
     private IntPtr _hsInc, _hsIncTy, _hsDec, _hsDecTy;
     private IntPtr _hsLive;
+
+    // runtime library (rt.c) entry points
+    private IntPtr _rtInitFn, _rtInitTy;
+    private IntPtr _rtLiveIncFn, _rtLiveIncTy;
+    private IntPtr _rtLiveDecFn, _rtLiveDecTy;
+    private IntPtr _rtLiveGetFn, _rtLiveGetTy;
+    private IntPtr _rtTaskNewFn, _rtTaskNewTy;
+    private IntPtr _rtTaskSubmitFn, _rtTaskSubmitTy;
+    private IntPtr _rtTaskJoinFn, _rtTaskJoinTy;
     private IntPtr _listNewFn, _listNewTy;
     private IntPtr _listAddFn, _listAddTy;
     private IntPtr _listGetFn, _listGetTy;
@@ -87,16 +112,37 @@ public sealed class CodeGen
 
     private string T(string p) => $"{p}{_tmp++}";
 
-    private readonly List<Dictionary<string, VarSlot>> _scopes = new();
-    private readonly List<VarSlot> _fnSlots = new();
+    // swapped wholesale when emitting a lambda trampoline, hence not readonly
+    private List<Dictionary<string, VarSlot>> _scopes = new();
+    private List<VarSlot> _fnSlots = new();
 
     // heap values created while emitting one statement; they die with it unless
     // someone takes them over
-    private readonly List<(IntPtr V, Ty Ty)> _temps = new();
+    private List<(IntPtr V, Ty Ty)> _temps = new();
 
     private IntPtr? _catchBB;
     private readonly Dictionary<string, (IntPtr fn, IntPtr ty, IntPtr entry, IntPtr body, FnDecl decl)> _fns = new();
     private FnDecl? _curDecl;
+
+    // (break target, continue target) for the innermost loop, also swapped
+    // during lambda emission
+    private List<(IntPtr brk, IntPtr cont)> _loopExit = new();
+
+    // one trampoline + env struct per lambda literal, emitted on first use.
+    // reference keying: two identical-looking lambdas are different functions
+    private sealed class LamInfo
+    {
+        public IntPtr Fn, EnvTy;
+        public long EnvSize;
+        public List<VarSlot> Captures = new();
+        public Ty Ret = Ty.Void;
+    }
+
+    private readonly Dictionary<LamLit, LamInfo> _lambdas = new(ReferenceEqualityComparer.Instance);
+
+    // set while emitting a lambda trampoline
+    private Ty? _lamRetTy;
+    private IntPtr _lamEnvParam;
 
     public void Generate(AstProgram program, string objPath) =>
         Generate(program, objPath, LLVM.PtrToStringAndFree(LLVM.LLVMGetDefaultTargetTriple()));
@@ -167,6 +213,20 @@ public sealed class CodeGen
         Ext("rewind", _void, new[] { _i8ptr }, false, out _rewindFn, out _rewindTy);
         Ext("remove", _i32, new[] { _i8ptr }, false, out _removeFn, out _removeTy);
         Ext("getchar", _i32, Array.Empty<IntPtr>(), false, out _getcharFn, out _getcharTy);
+        Ext("atoi", _i32, new[] { _i8ptr }, false, out _atoiFn, out _atoiTy);
+        Ext("strncmp", _i32, new[] { _i8ptr, _i8ptr, _i64 }, false, out _strncmpFn, out _strncmpTy);
+        Ext("strstr", _i8ptr, new[] { _i8ptr, _i8ptr }, false, out _strstrFn, out _strstrTy);
+
+        // sockets
+        Ext("rt_tcp_listen", _i64, new[] { _i32 }, false, out _tcpListenFn, out _tcpListenTy);
+        Ext("rt_tcp_accept", _i64, new[] { _i64 }, false, out _tcpAcceptFn, out _tcpAcceptTy);
+        Ext("rt_tcp_connect", _i64, new[] { _i8ptr, _i32 }, false, out _tcpConnectFn, out _tcpConnectTy);
+        Ext("rt_tcp_send", _i64, new[] { _i64, _i8ptr, _i64 }, false, out _tcpSendFn, out _tcpSendTy);
+        Ext("rt_tcp_close", _void, new[] { _i64 }, false, out _tcpCloseFn, out _tcpCloseTy);
+        Ext("rt_udp_open", _i64, Array.Empty<IntPtr>(), false, out _udpOpenFn, out _udpOpenTy);
+        Ext("rt_udp_sendto", _i64, new[] { _i64, _i8ptr, _i32, _i8ptr, _i64 }, false, out _udpSendToFn, out _udpSendToTy);
+        Ext("rt_tcp_line", _i8ptr, new[] { _i64 }, false, out _tcpLineFn, out _tcpLineTy);
+        Ext("rt_udp_recv", _i8ptr, new[] { _i64 }, false, out _udpRecvFn, out _udpRecvTy);
     }
 
     // declaration only, no body
@@ -188,22 +248,28 @@ public sealed class CodeGen
     // list and string helpers, so statement emitters don't inline the same IR everywhere
     private void EmitPrelude()
     {
-        _hsLive = LLVM.LLVMAddGlobal(_module, _i64, "hs_live");
-        LLVM.LLVMSetInitializer(_hsLive, LLVM.LLVMConstInt(_i64, 0, false));
+        Ext("rt_init", _void, Array.Empty<IntPtr>(), false, out _rtInitFn, out _rtInitTy);
+        Ext("rt_live_inc", _void, Array.Empty<IntPtr>(), false, out _rtLiveIncFn, out _rtLiveIncTy);
+        Ext("rt_live_dec", _void, Array.Empty<IntPtr>(), false, out _rtLiveDecFn, out _rtLiveDecTy);
+        Ext("rt_live_get", _i64, Array.Empty<IntPtr>(), false, out _rtLiveGetFn, out _rtLiveGetTy);
+        Ext("rt_task_new", _i8ptr, new[] { _i8ptr, _i8ptr }, false, out _rtTaskNewFn, out _rtTaskNewTy);
+        Ext("rt_task_submit", _void, new[] { _i8ptr }, false, out _rtTaskSubmitFn, out _rtTaskSubmitTy);
+        Ext("rt_task_join", _i8ptr, new[] { _i8ptr }, false, out _rtTaskJoinFn, out _rtTaskJoinTy);
 
+        // the counter itself lives in the runtime now, atomic, so tasks
+        // don't lie to mem()
         Fn("hs_inc", _void, Array.Empty<IntPtr>(), false, out _hsInc, out _hsIncTy);
         {
-            var v = Load(_i64, _hsLive);
-            Store(Add(v, ConstI64(1)), _hsLive);
+            CallV(_rtLiveIncTy, _rtLiveIncFn, Array.Empty<IntPtr>());
             RetVoid();
         }
 
         Fn("hs_dec", _void, Array.Empty<IntPtr>(), false, out _hsDec, out _hsDecTy);
         {
-            var v = Load(_i64, _hsLive);
-            Store(Sub(v, ConstI64(1)), _hsLive);
+            CallV(_rtLiveDecTy, _rtLiveDecFn, Array.Empty<IntPtr>());
             RetVoid();
         }
+        _hsLive = IntPtr.Zero;
 
         PreludeStrdup();
         PreludeConcat();
@@ -831,6 +897,9 @@ public sealed class CodeGen
         _errFlag = Alloca(_i32, "errflag");
         StoreAb(ConstI32(0), _errFlag);
 
+        // pool, winsock, counters: bring the runtime up before anything else
+        CallV(_rtInitTy, _rtInitFn, Array.Empty<IntPtr>());
+
         EmitStmtList(stmts);
         if (!Terminated()) Ret(ConstI32(0));
 
@@ -943,6 +1012,8 @@ public sealed class CodeGen
             case For f: EmitFor(f); EndStatement(); break;
             case Foreach fe: EmitForeach(fe); EndStatement(); break;
             case Return r: EmitReturn(r); break;
+            case Break: Br(_loopExit[^1].brk); break;
+            case Continue: Br(_loopExit[^1].cont); break;
             case TryCatch tc: EmitTryCatch(tc); EndStatement(); break;
             case BlockStmt b: EmitStmtList(b.Body); break;
             case Drop dr: EmitDrop(dr); break;
@@ -1107,6 +1178,13 @@ public sealed class CodeGen
 
     private void EmitAssignToVar(Assign a, Ident id)
     {
+        // discard, the fire-and-forget form: evaluate and drop
+        if (id.Name == "_" && FindSlot(id.Name) == null)
+        {
+            EmitExpr(a.Value);
+            return;
+        }
+
         var slot = FindSlot(id.Name)!;
 
         if (a.Op != "=")
@@ -1221,9 +1299,39 @@ public sealed class CodeGen
             '+' => Add(l, r),
             '-' => Sub(l, r),
             '*' => Mul(l, r),
-            '/' => LLVM.LLVMBuildSDiv(_b, l, r, T("sdiv")),
-            _ => LLVM.LLVMBuildSRem(_b, l, r, T("srem"))
+            '/' => GuardedDivRem(true, l, r),
+            _ => GuardedDivRem(false, l, r)
         };
+    }
+
+    // integer division by zero sets the error flag instead of crashing the
+    // process; the result is 0 on that path and lands in catch
+    private IntPtr GuardedDivRem(bool div, IntPtr l, IntPtr r)
+    {
+        var zero = ICmp(LLVM.LLVMIntPredicate.LLVMIntEQ, r, ConstI32(0));
+
+        var divBB = Block("dz_div");
+        var failBB = Block("dz_fail");
+        var merge = Block("dz_merge");
+
+        CondBr(zero, failBB, divBB);
+
+        At(divBB);
+        var res = div
+            ? LLVM.LLVMBuildSDiv(_b, l, r, T("sdiv"))
+            : LLVM.LLVMBuildSRem(_b, l, r, T("srem"));
+        var divEnd = LLVM.LLVMGetInsertBlock(_b);
+        Br(merge);
+
+        At(failBB);
+        Store(ConstI32(1), _errFlag);
+        var failEnd = LLVM.LLVMGetInsertBlock(_b);
+        Br(merge);
+
+        At(merge);
+        var phi = LLVM.LLVMBuildPhi(_b, _i32, T("dz"));
+        LLVM.LLVMAddIncoming(phi, new[] { res, ConstI32(0) }, new[] { divEnd, failEnd }, 2);
+        return phi;
     }
 
     private void EmitIf(If s)
@@ -1260,7 +1368,9 @@ public sealed class CodeGen
         CondBr(cond, bodyBB, afterBB);
 
         At(bodyBB);
+        _loopExit.Add((afterBB, condBB));
         EmitStmtList(w.Body);
+        _loopExit.RemoveAt(_loopExit.Count - 1);
         BrIfLive(condBB);
 
         At(afterBB);
@@ -1274,6 +1384,7 @@ public sealed class CodeGen
 
         var condBB = Block("for_cond");
         var bodyBB = Block("for_body");
+        var stepBB = Block("for_step");
         var afterBB = Block("for_after");
 
         Br(condBB);
@@ -1288,6 +1399,7 @@ public sealed class CodeGen
 
         At(bodyBB);
         _scopes.Add(new Dictionary<string, VarSlot>());
+        _loopExit.Add((afterBB, stepBB));
 
         foreach (var st in f.Body)
         {
@@ -1295,8 +1407,12 @@ public sealed class CodeGen
             EmitStmt(st);
         }
 
+        _loopExit.RemoveAt(_loopExit.Count - 1);
         _scopes.RemoveAt(_scopes.Count - 1);
-        if (!Terminated() && f.Step != null) EmitStmt(f.Step);
+        BrIfLive(stepBB);
+
+        At(stepBB);
+        if (f.Step != null) EmitStmt(f.Step);
         BrIfLive(condBB);
 
         At(afterBB);
@@ -1312,6 +1428,7 @@ public sealed class CodeGen
 
         var condBB = Block("fe_cond");
         var bodyBB = Block("fe_body");
+        var nextBB = Block("fe_next");
         var afterBB = Block("fe_after");
 
         Br(condBB);
@@ -1324,6 +1441,7 @@ public sealed class CodeGen
 
         At(bodyBB);
         _scopes.Add(new Dictionary<string, VarSlot>());
+        _loopExit.Add((afterBB, nextBB));
 
         // the loop variable gets its own copy, the list keeps the original
         var slot = NewSlot(fe.Var, elem, owned: elem.Owned);
@@ -1342,8 +1460,12 @@ public sealed class CodeGen
             EmitStmt(st);
         }
 
+        _loopExit.RemoveAt(_loopExit.Count - 1);
         _scopes.RemoveAt(_scopes.Count - 1);
-        if (!Terminated()) Store(Add(Load(_i32, idxPtr), ConstI32(1)), idxPtr);
+        BrIfLive(nextBB);
+
+        At(nextBB);
+        Store(Add(Load(_i32, idxPtr), ConstI32(1)), idxPtr);
         BrIfLive(condBB);
 
         At(afterBB);
@@ -1404,6 +1526,12 @@ public sealed class CodeGen
     // the returned value moves out with us, everything else this function owns dies here
     private void EmitReturn(Return r)
     {
+        if (_lamRetTy != null)
+        {
+            EmitLambdaReturn(r);
+            return;
+        }
+
         if (r.Value == null)
         {
             FreeTemps();
@@ -1464,6 +1592,12 @@ public sealed class CodeGen
                     return new(Call(_listSizeTy, _listSizeFn, new[] { t.V }), Ty.Int);
                 }
 
+            case LamLit:
+                throw new Exception("lambdas are only compiled through Task.Run");
+
+            case AwaitExpr aw:
+                return EmitAwait(aw);
+
             case ListLit ll: return EmitListLit(ll);
             default: throw new Exception("unsupported expression");
         }
@@ -1507,22 +1641,15 @@ public sealed class CodeGen
 
     private Val EmitBinary(Bin b)
     {
+        // these two must not evaluate the right side up front
+        if (b.Op == "&&" || b.Op == "||")
+            return EmitShortCircuit(b);
+
         var l = EmitExpr(b.L);
         var r = EmitExpr(b.R);
 
         switch (b.Op)
         {
-            case "&&":
-            case "||":
-                {
-                    var lb = ICmp(LLVM.LLVMIntPredicate.LLVMIntNE, l.V, ConstI32(0));
-                    var rb = ICmp(LLVM.LLVMIntPredicate.LLVMIntNE, r.V, ConstI32(0));
-                    var res = b.Op == "&&"
-                        ? LLVM.LLVMBuildAnd(_b, lb, rb, T("and"))
-                        : LLVM.LLVMBuildOr(_b, lb, rb, T("or"));
-                    return new(ZExt(res, _i32), Ty.Bool);
-                }
-
             case "==": case "!=": case "<": case "<=": case ">": case ">=":
                 return EmitCompare(b.Op, l, r);
 
@@ -1556,20 +1683,56 @@ public sealed class CodeGen
                 }
 
                 {
-                    var res = b.Op switch
-                    {
-                        "+" => Add(l.V, r.V),
-                        "-" => Sub(l.V, r.V),
-                        "*" => Mul(l.V, r.V),
-                        "/" => LLVM.LLVMBuildSDiv(_b, l.V, r.V, T("sdiv")),
-                        _ => LLVM.LLVMBuildSRem(_b, l.V, r.V, T("srem"))
-                    };
+                    var res = Arith(b.Op[0], Ty.Int, l.V, r.V);
                     return new(res, Ty.Int);
                 }
 
             default:
                 throw new Exception("unknown operator " + b.Op);
         }
+    }
+
+    // evaluates && / || with branches so the right side only runs when it must.
+    // its temporaries are freed on that path, since values defined in the rhs
+    // block don't dominate the merge point
+    private Val EmitShortCircuit(Bin b)
+    {
+        var l = EmitExpr(b.L);
+        var lb = ICmp(LLVM.LLVMIntPredicate.LLVMIntNE, l.V, ConstI32(0));
+        var preBB = LLVM.LLVMGetInsertBlock(_b);
+
+        var rhsBB = Block("sc_rhs");
+        var doneBB = Block("sc_done");
+
+        // false && x skips x; true || x skips x
+        if (b.Op == "&&") CondBr(lb, rhsBB, doneBB);
+        else CondBr(lb, doneBB, rhsBB);
+
+        At(rhsBB);
+        int tempStart = _temps.Count;
+        var r = EmitExpr(b.R);
+        var rb = ZExt(ICmp(LLVM.LLVMIntPredicate.LLVMIntNE, r.V, ConstI32(0)), _i32);
+
+        var rhsTemps = _temps.Skip(tempStart).ToList();
+        _temps.RemoveRange(tempStart, _temps.Count - tempStart);
+        foreach (var (tv, tty) in rhsTemps)
+        {
+            if (tty == Ty.Str)
+            {
+                CallV(_freeTy, _freeFn, new[] { tv });
+                CallV(_hsDecTy, _hsDec, Array.Empty<IntPtr>());
+            }
+            else if (tty.Elem != null) DropList(tv, tty.Elem!);
+        }
+
+        var rhsEnd = LLVM.LLVMGetInsertBlock(_b);
+        Br(doneBB);
+
+        At(doneBB);
+        var phi = LLVM.LLVMBuildPhi(_b, _i32, T("sc"));
+        var skipped = ConstBool(b.Op == "&&" ? false : true);
+        LLVM.LLVMAddIncoming(phi, new[] { skipped, rb }, new[] { preBB, rhsEnd }, 2);
+        return new(phi, Ty.Bool);
     }
 
     private Val EmitCompare(string op, Val l, Val r)
@@ -1639,9 +1802,436 @@ public sealed class CodeGen
         return new(l, Ty.List(ll.ElemTy), Prov.Temp);
     }
 
+    private static bool IsStaticClass(string name) =>
+        name is "Task" or "Tcp" or "Udp" or "Http";
+
+    // long handle -> pointer, negative stays visible to the err check below
+    private IntPtr HandlePtr(IntPtr v) => Int64ToPtr(v);
+
+    // routes a negative rt return into the error flag, returns null instead
+    private IntPtr GuardHandle(IntPtr raw)
+    {
+        var bad = ICmp(LLVM.LLVMIntPredicate.LLVMIntSLT, raw, ConstI64(0));
+
+        var ok = Block("net_ok");
+        var fail = Block("net_fail");
+        var merge = Block("net_merge");
+
+        CondBr(bad, fail, ok);
+
+        At(ok);
+        var okPtr = Int64ToPtr(raw);
+        var okEnd = LLVM.LLVMGetInsertBlock(_b);
+        Br(merge);
+
+        At(fail);
+        Store(ConstI32(1), _errFlag);
+        var failPtr = Null();
+        var failEnd = LLVM.LLVMGetInsertBlock(_b);
+        Br(merge);
+
+        At(merge);
+        var phi = LLVM.LLVMBuildPhi(_b, _i8ptr, T("h"));
+        LLVM.LLVMAddIncoming(phi, new[] { okPtr, failPtr }, new[] { okEnd, failEnd }, 2);
+        return phi;
+    }
+
+    // an rt string: NULL becomes an error plus an owned empty string, so the
+    // caller can free the result without caring which side it came from
+    private Val GuardNetString(IntPtr raw)
+    {
+        var bad = ICmp(LLVM.LLVMIntPredicate.LLVMIntEQ, raw, Null());
+
+        var ok = Block("net_ok");
+        var fail = Block("net_fail");
+        var merge = Block("net_merge");
+
+        CondBr(bad, fail, ok);
+
+        At(ok);
+        var okEnd = LLVM.LLVMGetInsertBlock(_b);
+        Br(merge);
+
+        At(fail);
+        Store(ConstI32(1), _errFlag);
+        var empty = Call(_strdupTy, _strdupFn, new[] { Str("") });
+        var failEnd = LLVM.LLVMGetInsertBlock(_b);
+        Br(merge);
+
+        At(merge);
+        var phi = LLVM.LLVMBuildPhi(_b, _i8ptr, T("ns"));
+        LLVM.LLVMAddIncoming(phi, new[] { raw, empty }, new[] { okEnd, failEnd }, 2);
+        return new(TempReg(phi, Ty.Str), Ty.Str, Prov.Temp);
+    }
+
+    private Val EmitNetStatic(string cls, Method m)
+    {
+        if (cls == "Tcp" && m.Name == "Listen")
+        {
+            var port = EmitExpr(m.Args[0]);
+            var raw = Call(_tcpListenTy, _tcpListenFn, new[] { port.V });
+            return new(GuardHandle(raw), Ty.Handle("listener"));
+        }
+
+        if (cls == "Tcp" && m.Name == "Connect")
+        {
+            var host = EmitExpr(m.Args[0]);
+            var port = EmitExpr(m.Args[1]);
+            var raw = Call(_tcpConnectTy, _tcpConnectFn, new[] { host.V, port.V });
+            return new(GuardHandle(raw), Ty.Handle("client"));
+        }
+
+        if (cls == "Udp" && m.Name == "Open")
+        {
+            var raw = Call(_udpOpenTy, _udpOpenFn, Array.Empty<IntPtr>());
+            return new(GuardHandle(raw), Ty.Handle("udp"));
+        }
+
+        throw new Exception($"'{cls}.{m.Name}' is not available yet");
+    }
+
+    private Val EmitHandleMethod(Val target, Method m)
+    {
+        var h64 = PtrToInt64(target.V);
+
+        if (m.Name == "Accept")
+        {
+            var raw = Call(_tcpAcceptTy, _tcpAcceptFn, new[] { h64 });
+            return new(GuardHandle(raw), Ty.Handle("client"));
+        }
+
+        if (m.Name == "Send")
+        {
+            var v = EmitExpr(m.Args[0]);
+            var len = Call(_strlenTy, _strlenFn, new[] { v.V });
+            var raw = Call(_tcpSendTy, _tcpSendFn, new[] { h64, v.V, len });
+            return new(GuardNetCount(raw), Ty.Int);
+        }
+
+        if (m.Name == "Recv")
+        {
+            var fn = target.Ty.Name == "udp" ? (_udpRecvFn, _udpRecvTy) : (_tcpLineFn, _tcpLineTy);
+            var raw = Call(fn.Item2, fn.Item1, new[] { h64 });
+            return GuardNetString(raw);
+        }
+
+        if (m.Name == "SendTo")
+        {
+            var host = EmitExpr(m.Args[0]);
+            var port = EmitExpr(m.Args[1]);
+            var msg = EmitExpr(m.Args[2]);
+            var len = Call(_strlenTy, _strlenFn, new[] { msg.V });
+            var raw = Call(_udpSendToTy, _udpSendToFn, new[] { h64, host.V, port.V, msg.V, len });
+            return new(GuardNetCount(raw), Ty.Int);
+        }
+
+        if (m.Name == "Close")
+        {
+            CallV(_tcpCloseTy, _tcpCloseFn, new[] { h64 });
+            return new(IntPtr.Zero, Ty.Void);
+        }
+
+        throw new Exception($"'{m.Name}' is not available on a {target.Ty.Name}");
+    }
+
+    // byte counts: negative turns into 0 plus the error flag
+    private IntPtr GuardNetCount(IntPtr raw)
+    {
+        var bad = ICmp(LLVM.LLVMIntPredicate.LLVMIntSLT, raw, ConstI64(0));
+
+        var ok = Block("net_ok");
+        var fail = Block("net_fail");
+        var merge = Block("net_merge");
+
+        CondBr(bad, fail, ok);
+
+        At(ok);
+        var okVal = Trunc(raw, _i32);
+        var okEnd = LLVM.LLVMGetInsertBlock(_b);
+        Br(merge);
+
+        At(fail);
+        Store(ConstI32(1), _errFlag);
+        var failEnd = LLVM.LLVMGetInsertBlock(_b);
+        Br(merge);
+
+        At(merge);
+        var phi = LLVM.LLVMBuildPhi(_b, _i32, T("nc"));
+        LLVM.LLVMAddIncoming(phi, new[] { okVal, ConstI32(0) }, new[] { okEnd, failEnd }, 2);
+        return phi;
+    }
+
+    private Val EmitTaskRun(Method m)
+    {
+        var lam = (LamLit)m.Args[0];
+
+        if (!_lambdas.TryGetValue(lam, out var info))
+            info = EmitLambda(lam);
+
+        // fill the env with the current capture values; owned ones move in
+        var env = Call(_mallocTy, _mallocFn, new[] { ConstI64(info.EnvSize) });
+
+        foreach (var (slot, i) in info.Captures.Select((s, i) => (s, i)))
+        {
+            var fieldPtr = LLVM.LLVMBuildStructGEP2(_b, info.EnvTy, env, (uint)i, T("cap"));
+            Store(Load(TyLLVM(slot.Ty), slot.Ptr), fieldPtr);
+            if (slot.Owned) Store(ConstI32(0), slot.Flag);
+        }
+
+        var task = Call(_rtTaskNewTy, _rtTaskNewFn, new[] { info.Fn, env });
+        CallV(_rtTaskSubmitTy, _rtTaskSubmitFn, new[] { task });
+
+        return new(task, Ty.Task(info.Ret), Prov.Static);
+    }
+
+    // compiles the lambda into a trampoline: ptr(env) -> ptr(boxed result).
+    // captured values are unpacked into ordinary local slots, so the whole
+    // statement machinery, drops included, works unchanged inside
+    private LamInfo EmitLambda(LamLit lam)
+    {
+        var info = new LamInfo { Ret = lam.RetTy ?? Ty.Void };
+        info.Captures = CollectCaptures(lam);
+
+        var fieldTys = info.Captures.Select(c => TyLLVM(c.Ty)).ToArray();
+        info.EnvTy = LLVM.LLVMStructCreateNamed(_ctx, $"lam.env{_lambdas.Count}");
+        if (fieldTys.Length > 0)
+            LLVM.LLVMStructSetBody(info.EnvTy, fieldTys, (uint)fieldTys.Length, false);
+        info.EnvSize = EnvSize(info.Captures.Select(c => c.Ty));
+
+        // save the whole emission context, we're switching functions mid-flight
+        var savedFn = _curFn;
+        var savedDecl = _curDecl;
+        var savedEntry = _entryBB;
+        var savedCodeBB = LLVM.LLVMGetInsertBlock(_b);
+        var savedAbBB = LLVM.LLVMGetInsertBlock(_ab);
+        var savedScopes = _scopes;
+        var savedSlots = _fnSlots;
+        var savedTemps = _temps;
+        var savedErr = _errFlag;
+        var savedCatch = _catchBB;
+        var savedLoopExit = _loopExit;
+
+        var fnTy = LLVM.LLVMFunctionType(_i8ptr, new[] { _i8ptr }, 1, false);
+        var fn = LLVM.LLVMAddFunction(_module, $"hs_lam{_lambdas.Count}", fnTy);
+        var entry = LLVM.LLVMAppendBasicBlockInContext(_ctx, fn, "entry");
+        var body = LLVM.LLVMAppendBasicBlockInContext(_ctx, fn, "body");
+
+        _curFn = fn;
+        _curDecl = null;
+        _entryBB = entry;
+        LLVM.LLVMPositionBuilderAtEnd(_ab, entry);
+        LLVM.LLVMPositionBuilderAtEnd(_b, body);
+
+        _scopes = new List<Dictionary<string, VarSlot>> { new() };
+        _fnSlots = new List<VarSlot>();
+        _temps = new List<(IntPtr, Ty)>();
+        _catchBB = null;
+        _loopExit = new List<(IntPtr, IntPtr)>();
+        _errFlag = Alloca(_i32, "errflag");
+        StoreAb(ConstI32(0), _errFlag);
+
+        _lamRetTy = info.Ret;
+        _lamEnvParam = LLVM.LLVMGetParam(fn, 0);
+
+        for (int i = 0; i < info.Captures.Count; i++)
+        {
+            var cap = info.Captures[i];
+            var slot = NewSlot(cap.Name, cap.Ty, owned: cap.Ty.Owned);
+            var fieldPtr = LLVM.LLVMBuildStructGEP2(_b, info.EnvTy, _lamEnvParam, (uint)i, T("cap"));
+            Store(Load(TyLLVM(cap.Ty), fieldPtr), slot.Ptr);
+            if (slot.Owned) Store(ConstI32(1), slot.Flag);
+        }
+
+        EmitStmtList(lam.Body);
+
+        if (!Terminated())
+        {
+            FreeTemps();
+            FreeAllOwned(null);
+            CallV(_freeTy, _freeFn, new[] { _lamEnvParam });
+            Ret(Null());
+        }
+
+        LLVM.LLVMPositionBuilderAtEnd(_ab, entry);
+        LLVM.LLVMBuildBr(_ab, body);
+
+        // back to whatever the caller was emitting
+        _curFn = savedFn;
+        _curDecl = savedDecl;
+        _entryBB = savedEntry;
+        At(savedCodeBB);
+        LLVM.LLVMPositionBuilderAtEnd(_ab, savedAbBB);
+        _scopes = savedScopes;
+        _fnSlots = savedSlots;
+        _temps = savedTemps;
+        _errFlag = savedErr;
+        _catchBB = savedCatch;
+        _loopExit = savedLoopExit;
+        _lamRetTy = null;
+        _lamEnvParam = IntPtr.Zero;
+
+        info.Fn = fn;
+        _lambdas[lam] = info;
+        return info;
+    }
+
+    // the identifiers a lambda body reads from the enclosing scopes, in first-use
+    // order. names that don't resolve here are lambda locals and get skipped
+    private List<VarSlot> CollectCaptures(LamLit lam)
+    {
+        var names = new List<string>();
+        CollectIdents(lam.Body, names);
+        var seen = new HashSet<string>();
+        var caps = new List<VarSlot>();
+
+        foreach (var n in names)
+        {
+            if (seen.Contains(n)) continue;
+            var slot = FindSlot(n);
+            if (slot == null) continue;
+            seen.Add(n);
+            caps.Add(slot);
+        }
+
+        return caps;
+    }
+
+    private static void CollectIdents(List<Stmt> stmts, List<string> names)
+    {
+        foreach (var s in stmts) CollectIdents(s, names);
+    }
+
+    private static void CollectIdents(Stmt s, List<string> names)
+    {
+        switch (s)
+        {
+            case VarDecl d: CollectIdents(d.Init, names); break;
+            case Assign a: CollectIdents(a.Target, names); CollectIdents(a.Value, names); break;
+            case IncDec i: CollectIdents(i.Target, names); break;
+            case ExprStmt e: CollectIdents(e.E, names); break;
+            case If f:
+                CollectIdents(f.Cond, names); CollectIdents(f.Then, names);
+                if (f.Else != null) CollectIdents(f.Else, names);
+                break;
+            case While w: CollectIdents(w.Cond, names); CollectIdents(w.Body, names); break;
+            case For f:
+                if (f.Init != null) CollectIdents(f.Init, names);
+                if (f.Cond != null) CollectIdents(f.Cond, names);
+                CollectIdents(f.Body, names);
+                if (f.Step != null) CollectIdents(f.Step, names);
+                break;
+            case Foreach fe: CollectIdents(fe.Iter, names); CollectIdents(fe.Body, names); break;
+            case Return r: if (r.Value != null) CollectIdents(r.Value, names); break;
+            case TryCatch tc: CollectIdents(tc.Try, names); CollectIdents(tc.Catch, names); break;
+            case BlockStmt b: CollectIdents(b.Body, names); break;
+        }
+    }
+
+    private static void CollectIdents(Expr e, List<string> names)
+    {
+        switch (e)
+        {
+            case Ident id: names.Add(id.Name); break;
+            case InterpLit it: foreach (var p in it.Parts) CollectIdents(p, names); break;
+            case Un u: CollectIdents(u.E, names); break;
+            case Bin b: CollectIdents(b.L, names); CollectIdents(b.R, names); break;
+            case Index ix: CollectIdents(ix.Target, names); CollectIdents(ix.Idx, names); break;
+            case Call c: foreach (var a in c.Args) CollectIdents(a, names); break;
+            case Method m:
+                CollectIdents(m.Target, names);
+                foreach (var a in m.Args) CollectIdents(a, names);
+                break;
+            case Prop p: CollectIdents(p.Target, names); break;
+            case ListLit ll: foreach (var i in ll.Items) CollectIdents(i, names); break;
+            case AwaitExpr aw: CollectIdents(aw.Task, names); break;
+        }
+    }
+
+    // LLVM struct layout math: sequential fields, each aligned to its own alignment
+    private static long EnvSize(IEnumerable<Ty> fields)
+    {
+        long offset = 0, maxAlign = 1;
+
+        foreach (var f in fields)
+        {
+            long size = f == Ty.Int || f == Ty.Bool ? 4 : 8;
+            long align = size;
+            offset = (offset + align - 1) / align * align;
+            offset += size;
+            if (align > maxAlign) maxAlign = align;
+        }
+
+        return (offset + maxAlign - 1) / maxAlign * maxAlign;
+    }
+
+    private Val EmitAwait(AwaitExpr aw)
+    {
+        var t = EmitExpr(aw.Task);
+        var raw = Call(_rtTaskJoinTy, _rtTaskJoinFn, new[] { t.V });
+        var ret = t.Ty.Elem!;
+
+        if (ret == Ty.Int || ret == Ty.Bool)
+            return new(Trunc(PtrToInt64(raw), _i32), ret);
+        if (ret == Ty.Float)
+        {
+            var v = Load(_double, raw);
+            CallV(_freeTy, _freeFn, new[] { raw });
+            return new(v, Ty.Float);
+        }
+        if (ret == Ty.Str || ret.Elem != null)
+            return new(TempReg(raw, ret), ret, Prov.Temp);
+
+        return new(IntPtr.Zero, Ty.Void);
+    }
+
+    private IntPtr BoxForTask(Val v, Ty ret)
+    {
+        if (ret == Ty.Int || ret == Ty.Bool)
+            return Int64ToPtr(ZExt(v.V, _i64));
+        if (ret == Ty.Float)
+        {
+            var buf = Call(_mallocTy, _mallocFn, new[] { ConstI64(8) });
+            Store(v.V, buf);
+            return buf;
+        }
+        if (ret.Owned) return TakeOwnership(v);
+        return Null();
+    }
+
+    // the return leaves with the task result; the env was only a carrier, so
+    // it gets a raw free without touching the allocation counter
+    private void EmitLambdaReturn(Return r)
+    {
+        IntPtr boxed;
+
+        if (r.Value == null)
+        {
+            boxed = Null();
+        }
+        else
+        {
+            var v = EmitExpr(r.Value);
+            boxed = BoxForTask(v, _lamRetTy!);
+        }
+
+        FreeTemps();
+        FreeAllOwned(r.Value is Ident id ? FindSlot(id.Name) : null);
+        CallV(_freeTy, _freeFn, new[] { _lamEnvParam });
+        Ret(boxed);
+    }
+
     private Val EmitMethod(Method m)
     {
+        if (m.Target is Ident t2 && t2.Name == "Task" && m.Name == "Run")
+            return EmitTaskRun(m);
+        if (m.Target is Ident ns && IsStaticClass(ns.Name))
+            return EmitNetStatic(ns.Name, m);
+
         var target = EmitExpr(m.Target);
+
+        if (Ty.IsHandle(target.Ty))
+            return EmitHandleMethod(target, m);
+
         var elem = target.Ty.Elem!;
 
         switch (m.Name)
@@ -1737,7 +2327,53 @@ public sealed class CodeGen
                 }
 
             case "mem":
-                return new(Trunc(Load(_i64, _hsLive), _i32), Ty.Int);
+                return new(Trunc(Call(_rtLiveGetTy, _rtLiveGetFn, Array.Empty<IntPtr>()), _i32), Ty.Int);
+
+            case "contains":
+                {
+                    var s = EmitExpr(c.Args[0]);
+                    var sub = EmitExpr(c.Args[1]);
+                    var hit = Call(_strstrTy, _strstrFn, new[] { s.V, sub.V });
+                    return new(ZExt(ICmp(LLVM.LLVMIntPredicate.LLVMIntNE, hit, Null()), _i32), Ty.Bool);
+                }
+
+            case "startsWith":
+                {
+                    var s = EmitExpr(c.Args[0]);
+                    var pre = EmitExpr(c.Args[1]);
+                    var len = Call(_strlenTy, _strlenFn, new[] { pre.V });
+                    var cmp = Call(_strncmpTy, _strncmpFn, new[] { s.V, pre.V, len });
+                    return new(ZExt(ICmp(LLVM.LLVMIntPredicate.LLVMIntEQ, cmp, ConstI32(0)), _i32), Ty.Bool);
+                }
+
+            case "indexOf":
+                {
+                    var s = EmitExpr(c.Args[0]);
+                    var sub = EmitExpr(c.Args[1]);
+                    var hit = Call(_strstrTy, _strstrFn, new[] { s.V, sub.V });
+                    var found = ICmp(LLVM.LLVMIntPredicate.LLVMIntNE, hit, Null());
+                    var diff = LLVM.LLVMBuildSub(_b, PtrToInt64(hit), PtrToInt64(s.V), T("idx"));
+                    return new(Select(found, Trunc(diff, _i32), ConstI32(-1)), Ty.Int);
+                }
+
+            case "sub":
+                {
+                    var s = EmitExpr(c.Args[0]);
+                    var start = EmitExpr(c.Args[1]);
+                    var len = EmitExpr(c.Args[2]);
+                    var buf = Call(_mallocTy, _mallocFn, new[] { Add(ZExt(len.V, _i64), ConstI64(1)) });
+                    CallV(_hsIncTy, _hsInc, Array.Empty<IntPtr>());
+                    var src = GepByte(s.V, SExt(start.V, _i64));
+                    CallV(_memcpyTy, _memcpyFn, new[] { buf, src, ZExt(len.V, _i64) });
+                    Store(ConstI8(0), GepByte(buf, ZExt(len.V, _i64)));
+                    return new(TempReg(buf, Ty.Str), Ty.Str, Prov.Temp);
+                }
+
+            case "parseInt":
+                {
+                    var s = EmitExpr(c.Args[0]);
+                    return new(Call(_atoiTy, _atoiFn, new[] { s.V }), Ty.Int);
+                }
         }
 
         return EmitUserCall(c);
@@ -1801,6 +2437,19 @@ public sealed class CodeGen
 
         var machine = LLVM.LLVMCreateTargetMachine(target, triple, "generic", "",
             LLVM.LLVMCodeGenOptLevel.Default, LLVM.LLVMRelocMode.PIC, LLVM.LLVMCodeModel.Default);
+
+        var passes = LLVM.LLVMCreatePassBuilderOptions();
+        LLVM.LLVMPassBuilderOptionsSetVerifyEach(passes, true);
+        var optErr = LLVM.LLVMRunPasses(_module, "default<O2>", machine, passes);
+        LLVM.LLVMDisposePassBuilderOptions(passes);
+
+        if (optErr != IntPtr.Zero)
+        {
+            var msg = LLVM.LLVMGetErrorMessage(optErr);
+            var text = Marshal.PtrToStringAnsi(msg) ?? "unknown";
+            LLVM.LLVMDisposeErrorMessage(msg);
+            throw new Exception("optimization failed: " + text);
+        }
 
         if (LLVM.LLVMTargetMachineEmitToFile(machine, _module, objPath, LLVM.LLVMCodeGenFileType.ObjectFile, out var emitErr) != 0)
             throw new Exception("failed to emit object file: " + LLVM.PtrToStringAndFree(emitErr));

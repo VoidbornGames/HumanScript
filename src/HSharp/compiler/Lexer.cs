@@ -4,10 +4,11 @@ public enum Tok
 {
     EOF, Ident, Int, Float, Str, Interp,
     KwVar, KwIf, KwElse, KwWhile, KwFor, KwForeach, KwIn, KwReturn, KwTry, KwCatch,
+    KwBreak, KwContinue, KwAwait,
     KwTrue, KwFalse, KwMove, KwVoid,
     TyInt, TyFloat, TyBool, TyString, TyList,
     LBrace, RBrace, LParen, RParen, LBracket, RBracket, Comma, Semi, Dot,
-    Assign, Plus, Minus, Star, Slash, Percent,
+    Assign, Plus, Minus, Star, Slash, Percent, FatArrow,
     Eq, NotEq, Lt, LtEq, Gt, GtEq, AndAnd, OrOr, Not,
     PlusPlus, MinusMinus, PlusEq, MinusEq, StarEq, SlashEq, PercentEq
 }
@@ -23,6 +24,7 @@ public sealed class Lexer(string src)
         ["var"] = Tok.KwVar, ["if"] = Tok.KwIf, ["else"] = Tok.KwElse, ["while"] = Tok.KwWhile,
         ["for"] = Tok.KwFor, ["foreach"] = Tok.KwForeach, ["in"] = Tok.KwIn, ["return"] = Tok.KwReturn,
         ["try"] = Tok.KwTry, ["catch"] = Tok.KwCatch, ["true"] = Tok.KwTrue, ["false"] = Tok.KwFalse,
+        ["break"] = Tok.KwBreak, ["continue"] = Tok.KwContinue, ["await"] = Tok.KwAwait,
         ["move"] = Tok.KwMove, ["void"] = Tok.KwVoid,
         ["int"] = Tok.TyInt, ["float"] = Tok.TyFloat, ["bool"] = Tok.TyBool,
         ["string"] = Tok.TyString, ["list"] = Tok.TyList
@@ -235,7 +237,7 @@ public sealed class Lexer(string src)
             case '*': kind = Match('=') ? Tok.StarEq : Tok.Star; break;
             case '/': kind = Match('=') ? Tok.SlashEq : Tok.Slash; break;
             case '%': kind = Match('=') ? Tok.PercentEq : Tok.Percent; break;
-            case '=': kind = Match('=') ? Tok.Eq : Tok.Assign; break;
+            case '=': kind = Match('=') ? Tok.Eq : Match('>') ? Tok.FatArrow : Tok.Assign; break;
             case '!': kind = Match('=') ? Tok.NotEq : Tok.Not; break;
             case '<': kind = Match('=') ? Tok.LtEq : Tok.Lt; break;
             case '>': kind = Match('=') ? Tok.GtEq : Tok.Gt; break;

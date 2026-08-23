@@ -20,6 +20,8 @@ public class CheckerTests
     [InlineData("var l = list<float> { };", "not supported yet")]
     [InlineData("if (5)\n{\n    print(\"x\");\n}", "if condition must be a bool")]
     [InlineData("var l = list<string> { \"a\" };\nprint(l[\"k\"]);", "list index must be an int")]
+    [InlineData("break;", "'break' outside of a loop")]
+    [InlineData("while (true)\n{\n    print(\"x\");\n}\ncontinue;", "'continue' outside of a loop")]
     [InlineData("print(\"a\" < \"b\");", "strings only support '==' and '!='")]
     [InlineData("var p = \"x\";\nvar q = p;\nvar r = p;", "use of moved value 'p'")]
     [InlineData("void f(move string s)\n{\n    print(s);\n}\nf(\"a\");\nf(\"b\");", "must be an owned value")]
@@ -114,6 +116,18 @@ public class CodegenTests
         print($"hi {name}");
         print(1 + 2.5);
         print(mem());
+        """)]
+    [InlineData("""
+        try
+        {
+            var x = 10 / 0;
+            print("nope");
+        }
+        catch
+        {
+            print("caught");
+        }
+        print(10 % 3);
         """)]
     public void CompilesToVerifiedObjectFile(string source)
     {

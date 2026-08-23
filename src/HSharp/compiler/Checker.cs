@@ -16,6 +16,8 @@ sealed class WalkResult
     // variables this statement read, either directly or through nested blocks
     public HashSet<Sym> Used = new(ReferenceEqualityComparer.Instance);
     public List<string> DropsAfter = new();
+    // jump statements skip the scope-end drops, so they bring their own
+    public List<string> DropsBefore = new();
 }
 
 // types the program and tracks who owns what. rejects anything that could
@@ -23,12 +25,24 @@ sealed class WalkResult
 // where values die so codegen doesn't have to reason about lifetimes at all
 public sealed class Checker
 {
-    private static readonly HashSet<string> Builtins = new() { "print", "input", "len", "copy", "read", "write", "exists", "delete", "mem" };
+    private static readonly HashSet<string> Builtins = new() { "print", "input", "len", "copy", "read", "write", "exists", "delete", "mem", "contains", "startsWith", "indexOf", "sub", "parseInt" };
 
     private readonly Dictionary<string, FnDecl> _fns = new();
     private List<Dictionary<string, Sym>> _scopes = new();
     private int _loopDepth, _branchDepth;
     private FnDecl? _fn;
+
+    // scope index where each enclosing loop body starts, for break/continue
+    private readonly List<int> _loopBase = new();
+
+    // lambda nesting: each entry is the inferred return type so far (null = none seen).
+    // a return belongs to the innermost lambda, not the enclosing function
+    private readonly List<Ty?> _lamRet = new();
+    private readonly List<int> _lamBase = new();
+
+    // loop depth surrounding each lambda, so captures still respect the
+    // no-moves-inside-loops rule even though _loopDepth resets inside
+    private readonly List<int> _lamOuterLoop = new();
 
     public void Check(AstProgram program)
     {
@@ -76,6 +90,14 @@ public sealed class Checker
         return null!;
     }
 
+    // which scope index declares the sym, or -1
+    private int OwnerDepth(Sym sym)
+    {
+        for (int i = _scopes.Count - 1; i >= 0; i--)
+            if (_scopes[i].ContainsValue(sym)) return i;
+        return -1;
+    }
+
     private static void Err(int line, int col, string msg) => throw new SourceError(line, col, msg);
 
     // walks a block, remembers each local's last use, then afterwards inserts
@@ -113,6 +135,9 @@ public sealed class Checker
 
             foreach (var name in r.DropsAfter)
                 pendings.Add((i + 1, name));
+
+            foreach (var name in r.DropsBefore)
+                pendings.Add((i, name));
         }
 
         foreach (var g in lastUse)
@@ -162,7 +187,18 @@ public sealed class Checker
 
                     if (a.Target is Ident id)
                     {
+                        // discard assignment, the idiomatic fire-and-forget form
+                        if (id.Name == "_" && Find(id.Name) == null)
+                        {
+                            WalkExpr(a.Value, r.Used);
+                            break;
+                        }
+
                         var sym = Find(id.Name) ?? throw new SourceError(id.Line, id.Col, $"undefined variable '{id.Name}'");
+
+                        // a task must not reach back into the caller's frame
+                        if (_lamBase.Count > 0 && OwnerDepth(sym) is >= 0 and var od && od < _lamBase[^1])
+                            Err(a.Line, a.Col, $"cannot assign to '{id.Name}' from inside a lambda");
                         if (!TyMatches(sym.Ty, valTy))
                             Err(a.Line, a.Col, $"cannot assign a {valTy} value to '{id.Name}' of type {sym.Ty}");
 
@@ -248,7 +284,9 @@ public sealed class Checker
                     // body state is thrown away afterwards, the loop may not run at all
                     var snap = Snapshot();
                     _loopDepth++;
+                    _loopBase.Add(_scopes.Count);
                     var used = WalkStmts(w.Body);
+                    _loopBase.RemoveAt(_loopBase.Count - 1);
                     _loopDepth--;
                     Restore(snap);
 
@@ -256,11 +294,12 @@ public sealed class Checker
                     break;
                 }
 
-            case For f:
-                {
-                    // the loop variable outlives the body but not the statement
-                    var forScope = new Dictionary<string, Sym>();
-                    _scopes.Add(forScope);
+                case For f:
+                    {
+                        // the loop variable outlives the body but not the statement
+                        var forScope = new Dictionary<string, Sym>();
+                        _loopBase.Add(_scopes.Count);
+                        _scopes.Add(forScope);
 
                     if (f.Init != null) r.Used.UnionWith(WalkStmt(f.Init).Used);
 
@@ -281,6 +320,7 @@ public sealed class Checker
                     if (f.Step != null) r.Used.UnionWith(WalkStmt(f.Step).Used);
 
                     _scopes.RemoveAt(_scopes.Count - 1);
+                    _loopBase.RemoveAt(_loopBase.Count - 1);
                     r.DropsAfter.AddRange(forScope.Values.Where(x => x.Owned).Select(x => x.Name).Reverse());
                     break;
                 }
@@ -296,7 +336,9 @@ public sealed class Checker
                     var loopVar = new Sym { Name = fe.Var, Ty = itTy.Elem!, Owned = itTy.Elem!.Owned, LoopScoped = true };
                     var snap = Snapshot();
                     _loopDepth++;
+                    _loopBase.Add(_scopes.Count);
                     var used = WalkStmts(fe.Body, loopVar);
+                    _loopBase.RemoveAt(_loopBase.Count - 1);
                     _loopDepth--;
                     Restore(snap);
 
@@ -306,6 +348,27 @@ public sealed class Checker
 
             case Return ret:
                 {
+                    // a return inside a lambda body belongs to the lambda
+                    if (_lamRet.Count > 0)
+                    {
+                        if (ret.Value == null)
+                        {
+                            if (_lamRet[^1] != null && _lamRet[^1] != Ty.Void)
+                                Err(ret.Line, ret.Col, "lambda must return a value");
+                            _lamRet[^1] ??= Ty.Void;
+                        }
+                        else
+                        {
+                            var rt = WalkExpr(ret.Value, r.Used);
+                            if (rt == Ty.Void) Err(ret.Line, ret.Col, "cannot return a void value");
+
+                            if (_lamRet[^1] == null) _lamRet[^1] = rt;
+                            else if (!TyMatches(_lamRet[^1]!, rt))
+                                Err(ret.Line, ret.Col, $"lambda returns both {_lamRet[^1]} and {rt}");
+                        }
+                        break;
+                    }
+
                     if (_fn == null) Err(ret.Line, ret.Col, "'return' outside of a function");
 
                     if (ret.Value == null)
@@ -328,6 +391,30 @@ public sealed class Checker
                             sym.Moved = true;
                         }
                     }
+                    break;
+                }
+
+            case Break br:
+                {
+                    if (_loopBase.Count == 0)
+                        Err(br.Line, br.Col, "'break' outside of a loop");
+
+                    // everything alive between here and the loop body start dies now;
+                    // the flag guard keeps this idempotent with the scope-end drops
+                    for (int si = _loopBase[^1]; si < _scopes.Count; si++)
+                        foreach (var s in _scopes[si].Values)
+                            if (s.Owned) r.DropsBefore.Add(s.Name);
+                    break;
+                }
+
+            case Continue co:
+                {
+                    if (_loopBase.Count == 0)
+                        Err(co.Line, co.Col, "'continue' outside of a loop");
+
+                    for (int si = _loopBase[^1]; si < _scopes.Count; si++)
+                        foreach (var s in _scopes[si].Values)
+                            if (s.Owned) r.DropsBefore.Add(s.Name);
                     break;
                 }
 
@@ -443,6 +530,26 @@ public sealed class Checker
                     if (sym == null) Err(id.Line, id.Col, $"undefined variable '{id.Name}'");
                     if (sym.Moved || sym.MaybeMoved)
                         Err(id.Line, id.Col, $"use of moved value '{id.Name}'");
+
+                    // inside a lambda, touching an outer owned variable is a
+                    // capture-by-move: the task outlives this frame
+                    if (_lamBase.Count > 0)
+                    {
+                        var owner = OwnerDepth(sym);
+                        if (owner >= 0 && owner < _lamBase[^1])
+                        {
+                            if (sym.BorrowParam)
+                                Err(id.Line, id.Col, $"cannot capture borrowed value '{id.Name}'; use copy()");
+                            if (sym.Ty.Owned)
+                            {
+                                if (_lamOuterLoop[^1] > 0 && !sym.LoopScoped)
+                                    Err(id.Line, id.Col, $"cannot capture '{id.Name}' inside a loop");
+                                sym.Moved = true;
+                                if (_branchDepth > 0) sym.MaybeMoved = true;
+                            }
+                        }
+                    }
+
                     uses.Add(sym);
                     return sym.Ty;
                 }
@@ -472,8 +579,21 @@ public sealed class Checker
                     return target.Elem!;
                 }
 
+            case LamLit:
+                Err(e.Line, e.Col, "lambdas are only allowed as the argument to Task.Run");
+                return Ty.Void;
+
+            case AwaitExpr aw:
+                {
+                    var ty = WalkExpr(aw.Task, uses);
+                    if (!Ty.IsTask(ty))
+                        Err(aw.Line, aw.Col, "'await' requires a task");
+                    return ty.Elem!;
+                }
+
             case Call c:
                 return WalkCall(c, uses);
+
 
             case Method m:
                 return WalkMethod(m, uses);
@@ -577,7 +697,7 @@ public sealed class Checker
                 {
                     var ty = WalkExpr(c.Args[0], uses);
                     if (ty == Ty.Void) Err(c.Line, c.Col, "cannot print a void value");
-                    if (ty.Elem != null) Err(c.Line, c.Col, "cannot print a list");
+                    if (ty.Elem != null) Err(c.Line, c.Col, "cannot print a list or a task");
                 }
                 return Ty.Void;
 
@@ -599,6 +719,33 @@ public sealed class Checker
 
             case "mem":
                 if (c.Args.Count != 0) Err(c.Line, c.Col, "mem takes no arguments");
+                return Ty.Int;
+
+            case "contains":
+                StrArgs(c, uses, 2);
+                return Ty.Bool;
+
+            case "startsWith":
+                StrArgs(c, uses, 2);
+                return Ty.Bool;
+
+            case "indexOf":
+                StrArgs(c, uses, 2);
+                return Ty.Int;
+
+            case "sub":
+                {
+                    if (c.Args.Count != 3) Err(c.Line, c.Col, "sub takes (string, start, length)");
+                    var s = WalkExpr(c.Args[0], uses);
+                    var start = WalkExpr(c.Args[1], uses);
+                    var len = WalkExpr(c.Args[2], uses);
+                    if (s != Ty.Str || start != Ty.Int || len != Ty.Int)
+                        Err(c.Line, c.Col, "sub requires (string, int, int)");
+                    return Ty.Str;
+                }
+
+            case "parseInt":
+                StrArgs(c, uses, 1);
                 return Ty.Int;
         }
 
@@ -639,6 +786,141 @@ public sealed class Checker
         return fn.Ret;
     }
 
+    private Ty WalkHandleMethod(Ty target, Method m, HashSet<Sym> uses)
+    {
+        string kind = target.Name;
+
+        if (kind == "listener" && m.Name == "Accept")
+        {
+            if (m.Args.Count != 0) Err(m.Line, m.Col, "Accept takes no arguments");
+            return Ty.Handle("client");
+        }
+
+        if (kind == "client" && m.Name is "Send" or "Recv" or "Close")
+        {
+            if (m.Name == "Send")
+            {
+                if (m.Args.Count != 1) Err(m.Line, m.Col, "Send takes one string");
+                var ty = WalkExpr(m.Args[0], uses);
+                if (ty != Ty.Str) Err(m.Line, m.Col, "Send requires a string");
+                return Ty.Int;
+            }
+            if (m.Name == "Recv")
+            {
+                if (m.Args.Count != 0) Err(m.Line, m.Col, "Recv takes no arguments");
+                return Ty.Str;
+            }
+            if (m.Args.Count != 0) Err(m.Line, m.Col, "Close takes no arguments");
+            return Ty.Void;
+        }
+
+        if (kind == "udp" && m.Name is "SendTo" or "Recv" or "Close")
+        {
+            if (m.Name == "SendTo")
+            {
+                if (m.Args.Count != 3) Err(m.Line, m.Col, "SendTo takes (host, port, message)");
+                var host = WalkExpr(m.Args[0], uses);
+                var port = WalkExpr(m.Args[1], uses);
+                var msg = WalkExpr(m.Args[2], uses);
+                if (host != Ty.Str || port != Ty.Int || msg != Ty.Str)
+                    Err(m.Line, m.Col, "SendTo requires (string, int, string)");
+                return Ty.Int;
+            }
+            if (m.Name == "Recv")
+            {
+                if (m.Args.Count != 0) Err(m.Line, m.Col, "Recv takes no arguments");
+                return Ty.Str;
+            }
+            if (m.Args.Count != 0) Err(m.Line, m.Col, "Close takes no arguments");
+            return Ty.Void;
+        }
+
+        Err(m.Line, m.Col, $"'{m.Name}' is not available on a {kind}");
+        return Ty.Void;
+    }
+
+    private static bool IsStaticClass(string name) =>
+        name is "Task" or "Tcp" or "Udp" or "Http";
+
+    private Ty WalkStaticCall(string cls, Method m, HashSet<Sym> uses)
+    {
+        if (cls == "Task" && m.Name == "Run")
+        {
+            var lam = m.Args.Count == 1 ? m.Args[0] as LamLit : null;
+            if (lam == null)
+                Err(m.Line, m.Col, "Task.Run takes a lambda: Task.Run((params) => body)");
+            if (lam!.Params.Count != 0)
+                Err(m.Line, m.Col, "a Task.Run lambda takes no parameters, capture values instead");
+
+            return Ty.Task(WalkLambda(lam, uses));
+        }
+
+        if (cls == "Tcp" && m.Name == "Listen")
+        {
+            if (m.Args.Count != 1) Err(m.Line, m.Col, "Tcp.Listen takes a port");
+            var ty = WalkExpr(m.Args[0], uses);
+            if (ty != Ty.Int) Err(m.Line, m.Col, "Tcp.Listen requires an int port");
+            return Ty.Handle("listener");
+        }
+
+        if (cls == "Tcp" && m.Name == "Connect")
+        {
+            if (m.Args.Count != 2) Err(m.Line, m.Col, "Tcp.Connect takes a host and a port");
+            var host = WalkExpr(m.Args[0], uses);
+            var port = WalkExpr(m.Args[1], uses);
+            if (host != Ty.Str || port != Ty.Int)
+                Err(m.Line, m.Col, "Tcp.Connect requires (string, int)");
+            return Ty.Handle("client");
+        }
+
+        if (cls == "Udp" && m.Name == "Open")
+        {
+            if (m.Args.Count != 0) Err(m.Line, m.Col, "Udp.Open takes no arguments");
+            return Ty.Handle("udp");
+        }
+
+        Err(m.Line, m.Col, $"'{cls}.{m.Name}' is not available yet");
+        return Ty.Void;
+    }
+
+    // walks the lambda body in scopes stacked on top of the enclosing ones;
+    // _lamBase marks where the lambda begins so the Ident case can tell
+    // captures from locals. outer owned variables get moved into the task,
+    // plain numbers are copied. returns the body's return type
+    private Ty WalkLambda(LamLit lam, HashSet<Sym> uses)
+    {
+        var savedFn = _fn;
+        var outerLoopDepth = _loopDepth;
+
+        _fn = null;
+        _loopDepth = 0;
+        _lamRet.Add(null);
+        _lamBase.Add(_scopes.Count);
+        _lamOuterLoop.Add(outerLoopDepth);
+
+        _scopes.Add(new Dictionary<string, Sym>());
+        foreach (var p in lam.Params)
+        {
+            if (p.Move && !p.Type.Owned)
+                throw new SourceError(p.Line, p.Col, "'move' is only valid for string and list parameters");
+            _scopes[^1][p.Name] = new Sym { Name = p.Name, Ty = p.Type, BorrowParam = p.Type.Owned && !p.Move, Owned = p.Move };
+        }
+
+        WalkStmts(lam.Body);
+
+        var ret = _lamRet[^1] ?? Ty.Void;
+        lam.RetTy = ret;
+
+        _scopes.RemoveAt(_scopes.Count - 1);
+        _lamOuterLoop.RemoveAt(_lamOuterLoop.Count - 1);
+        _lamBase.RemoveAt(_lamBase.Count - 1);
+        _lamRet.RemoveAt(_lamRet.Count - 1);
+        _loopDepth = outerLoopDepth;
+        _fn = savedFn;
+
+        return ret;
+    }
+
     private void StrArgs(Call c, HashSet<Sym> uses, int want)
     {
         if (c.Args.Count != want) Err(c.Line, c.Col, $"{c.Name} takes {want} argument(s)");
@@ -652,7 +934,16 @@ public sealed class Checker
 
     private Ty WalkMethod(Method m, HashSet<Sym> uses)
     {
+        // static builtins look like method calls: Task.Run, Tcp.Listen, ...
+        if (m.Target is Ident ns && IsStaticClass(ns.Name))
+            return WalkStaticCall(ns.Name, m, uses);
+
         var target = WalkExpr(m.Target, uses);
+
+        // methods on runtime handles: listener.Accept, client.Send, ...
+        if (Ty.IsHandle(target))
+            return WalkHandleMethod(target, m, uses);
+
         if (target.Elem == null)
             Err(m.Line, m.Col, $"'{m.Name}' is only available on lists");
 
