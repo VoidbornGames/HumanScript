@@ -172,6 +172,11 @@ public sealed class Checker
                     if (d.Ann != null && !TyMatches(d.Ann, ty))
                         Err(d.Line, d.Col, $"cannot initialize '{d.Name}' of type {d.Ann} with a {ty} value");
 
+                    // borrowing from a parameter must be explicit, the hidden
+                    // strdup behind a plain move reads as free
+                    if (d.Init is Ident src && InitFromBorrow(src))
+                        Err(d.Line, d.Col, $"cannot move out of borrowed parameter '{src.Name}', use copy({src.Name})");
+
                     ConsumeOwned(d.Init);
                     CheckListCopy(d.Init, d.Line, d.Col);
 
@@ -216,6 +221,9 @@ public sealed class Checker
                         // += only reads its source, plain = takes it over
                         if (a.Op == "=")
                         {
+                            if (a.Value is Ident src && InitFromBorrow(src))
+                                Err(a.Line, a.Col, $"cannot move out of borrowed parameter '{src.Name}', use copy({src.Name})");
+
                             ConsumeOwned(a.Value);
                             CheckListCopy(a.Value, a.Line, a.Col);
                         }
@@ -502,6 +510,13 @@ public sealed class Checker
         var sym = Find(id.Name);
         if (sym != null && sym.BorrowParam && sym.Ty.Elem != null)
             Err(line, col, $"cannot copy borrowed list '{id.Name}'");
+    }
+
+    // true when the expression is a plain read of a borrowed owned parameter
+    private bool InitFromBorrow(Ident id)
+    {
+        var sym = Find(id.Name);
+        return sym != null && sym.BorrowParam && sym.Ty.Owned;
     }
 
     private Ty WalkExpr(Expr e, HashSet<Sym> uses)

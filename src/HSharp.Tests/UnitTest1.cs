@@ -20,6 +20,8 @@ public class CheckerTests
     [InlineData("var l = list<float> { };", "not supported yet")]
     [InlineData("if (5)\n{\n    print(\"x\");\n}", "if condition must be a bool")]
     [InlineData("var l = list<string> { \"a\" };\nprint(l[\"k\"]);", "list index must be an int")]
+    [InlineData("void f(string p)\n{\n    var t = p;\n}\nf(\"a\");", "cannot move out of borrowed parameter 'p', use copy(p)")]
+    [InlineData("void f(string p)\n{\n    var t = \"\";\n    t = p;\n}\nf(\"a\");", "cannot move out of borrowed parameter 'p', use copy(p)")]
     [InlineData("break;", "'break' outside of a loop")]
     [InlineData("while (true)\n{\n    print(\"x\");\n}\ncontinue;", "'continue' outside of a loop")]
     [InlineData("print(\"a\" < \"b\");", "strings only support '==' and '!='")]
