@@ -169,3 +169,5 @@ Compile-error coverage (moves, borrows, types) runs the checker in-process; code
 
 ## License
 MIT
+
+`Disclaimer`: AI was used in C/C++ and LLVM development!
