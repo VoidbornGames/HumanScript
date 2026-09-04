@@ -7,6 +7,12 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "compiler", "HSharp\compiler
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HSharp.Tests", "HSharp.Tests\HSharp.Tests.csproj", "{D636E65D-650C-4806-985D-05223F20F24B}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "HSharp", "HSharp", "{BB08353F-3CBA-6ADA-B97B-DF7373698CF3}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "lsp", "lsp", "{CD278292-504B-3612-E6CE-E97C1D3B0FAB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HSharp.Lsp", "HSharp\lsp\HSharp.Lsp.csproj", "{AF70EDC3-A579-4B8B-AFF1-601204F028EF}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -41,9 +47,25 @@ Global
 		{D636E65D-650C-4806-985D-05223F20F24B}.Release|x64.Build.0 = Release|Any CPU
 		{D636E65D-650C-4806-985D-05223F20F24B}.Release|x86.ActiveCfg = Release|Any CPU
 		{D636E65D-650C-4806-985D-05223F20F24B}.Release|x86.Build.0 = Release|Any CPU
+		{AF70EDC3-A579-4B8B-AFF1-601204F028EF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AF70EDC3-A579-4B8B-AFF1-601204F028EF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AF70EDC3-A579-4B8B-AFF1-601204F028EF}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{AF70EDC3-A579-4B8B-AFF1-601204F028EF}.Debug|x64.Build.0 = Debug|Any CPU
+		{AF70EDC3-A579-4B8B-AFF1-601204F028EF}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{AF70EDC3-A579-4B8B-AFF1-601204F028EF}.Debug|x86.Build.0 = Debug|Any CPU
+		{AF70EDC3-A579-4B8B-AFF1-601204F028EF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AF70EDC3-A579-4B8B-AFF1-601204F028EF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AF70EDC3-A579-4B8B-AFF1-601204F028EF}.Release|x64.ActiveCfg = Release|Any CPU
+		{AF70EDC3-A579-4B8B-AFF1-601204F028EF}.Release|x64.Build.0 = Release|Any CPU
+		{AF70EDC3-A579-4B8B-AFF1-601204F028EF}.Release|x86.ActiveCfg = Release|Any CPU
+		{AF70EDC3-A579-4B8B-AFF1-601204F028EF}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{CD278292-504B-3612-E6CE-E97C1D3B0FAB} = {BB08353F-3CBA-6ADA-B97B-DF7373698CF3}
+		{AF70EDC3-A579-4B8B-AFF1-601204F028EF} = {CD278292-504B-3612-E6CE-E97C1D3B0FAB}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {364D6B95-5C28-4BA3-A5EE-F02B68EA95ED}

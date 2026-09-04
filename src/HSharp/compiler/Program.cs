@@ -1,6 +1,9 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 using HSharp;
+using HSharp.Checking;
+using HSharp.CodeGen;
+using HSharp.Syntax;
 
 if (args.Length < 1)
 {
@@ -12,17 +15,21 @@ bool isWindows = OperatingSystem.IsWindows();
 
 string sourcePath = args[0];
 var extraClangArgs = new List<string>();
+var importDirs = new List<string>();
 string? platform = null;
 string? givenOutput = null;
+bool checkOnly = false;
 for (int i = 1; i < args.Length; i++)
 {
     if (args[i] == "-o" && i + 1 < args.Length) { givenOutput = args[++i]; continue; }
     if (args[i] == "-platform" && i + 1 < args.Length) { platform = args[++i]; continue; }
+    if (args[i] == "-I" && i + 1 < args.Length) { importDirs.Add(args[++i]); continue; }
+    if (args[i] == "--check") { checkOnly = true; continue; }
     extraClangArgs.Add(args[i]);
 }
 
-// clang flags never need shell metacharacters, so anything outside this
-// set is rejected before it gets anywhere near the linker
+Imports.ConfigureSearchPaths(importDirs);
+
 var safeArg = new Regex("^[A-Za-z0-9_+=.,:\\/@%\" -]+$");
 foreach (var a in extraClangArgs)
 {
@@ -33,7 +40,6 @@ foreach (var a in extraClangArgs)
     }
 }
 
-// no -platform means build for whatever we're running on
 string? triple = platform switch
 {
     null => LLVM.PtrToStringAndFree(LLVM.LLVMGetDefaultTargetTriple()),
@@ -54,7 +60,6 @@ if (triple == null)
 bool exeExt = triple.Contains("windows");
 string outputPath = givenOutput ?? (Path.GetFileNameWithoutExtension(sourcePath) + (exeExt ? ".exe" : ""));
 
-// canonicalize before handing it to the linker; malformed paths die here
 try { outputPath = Path.GetFullPath(outputPath); }
 catch (Exception)
 {
@@ -68,99 +73,31 @@ if (!File.Exists(sourcePath))
     return 1;
 }
 
-string source = File.ReadAllText(sourcePath);
-
 string objPath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".o");
 
 try
 {
-    var tokens = new Lexer(source).Tokenize();
-    var program = new Parser(tokens).Parse();
+    var program = Imports.Load(sourcePath);
     new Checker().Check(program);
+
+    if (checkOnly)
+    {
+        Console.Out.WriteLine("OK");
+        return 0;
+    }
 
     new CodeGen().Generate(program, objPath, triple);
 
-    // the runtime ships as source next to the compiler; build it once per
-    // target triple and rt.c version, then cache
-    string rtSrc = Path.Combine(AppContext.BaseDirectory, "rt.c");
-    string rtDir = Path.Combine(Path.GetTempPath(), "hsharp-rt");
-    string rtStamp = File.Exists(rtSrc) ? File.GetLastWriteTimeUtc(rtSrc).Ticks.ToString() : "0";
-    string rtObj = Path.Combine(rtDir, triple.Replace('/', '_') + "-" + rtStamp + ".o");
-    if (File.Exists(rtSrc) && !File.Exists(rtObj))
+    var rtObj = Linker.RuntimeObject(triple);
+    if (rtObj == null)
     {
-        Directory.CreateDirectory(rtDir);
-        var rtPsi = new ProcessStartInfo
-        {
-            FileName = isWindows ? "clang" : "clang-18",
-            RedirectStandardError = true,
-            RedirectStandardOutput = true,
-            UseShellExecute = false
-        };
-        rtPsi.ArgumentList.Add("-c");
-        rtPsi.ArgumentList.Add(rtSrc);
-        rtPsi.ArgumentList.Add("-target");
-        rtPsi.ArgumentList.Add(triple);
-        rtPsi.ArgumentList.Add("-D_WINSOCK_DEPRECATED_NO_WARNINGS");
-        rtPsi.ArgumentList.Add("-o");
-        rtPsi.ArgumentList.Add(rtObj);
-
-        using var rtProc = Process.Start(rtPsi)!;
-        string rtOut = rtProc.StandardOutput.ReadToEnd();
-        string rtErr = rtProc.StandardError.ReadToEnd();
-        rtProc.WaitForExit();
-        if (rtProc.ExitCode != 0)
-        {
-            Console.Error.WriteLine("error: failed to build the runtime:");
-            if (!string.IsNullOrWhiteSpace(rtOut)) Console.Error.WriteLine(rtOut);
-            if (!string.IsNullOrWhiteSpace(rtErr)) Console.Error.WriteLine(rtErr);
-            return 1;
-        }
+        Console.Error.WriteLine("error: failed to build the runtime (is rt.c next to the compiler?)");
+        return 1;
     }
 
-    string linker = isWindows ? "clang" : "clang-18";
-    var psi = new ProcessStartInfo
+    if (!Linker.Link(objPath, outputPath, triple, extraClangArgs))
     {
-        FileName = linker,
-        RedirectStandardError = true,
-        RedirectStandardOutput = true,
-        UseShellExecute = false
-    };
-
-    psi.ArgumentList.Add("-target");
-    psi.ArgumentList.Add(triple);
-    if (File.Exists(rtObj)) psi.ArgumentList.Add(rtObj);
-    psi.ArgumentList.Add(objPath);
-    psi.ArgumentList.Add("-o");
-    psi.ArgumentList.Add(outputPath);
-
-    // flags follow the target, not the machine we're sitting on
-    if (exeExt)
-    {
-        psi.ArgumentList.Add("-llegacy_stdio_definitions");
-        psi.ArgumentList.Add("-lws2_32");
-    }
-    else if (!triple.Contains("darwin"))
-    {
-        psi.ArgumentList.Add(isWindows ? "-fuse-ld=lld" : "-fuse-ld=lld-18");
-        psi.ArgumentList.Add("-static");
-    }
-    foreach (var a in extraClangArgs) psi.ArgumentList.Add(a);
-
-    using var proc = Process.Start(psi)!;
-
-    Task<string> stdoutTask = proc.StandardOutput.ReadToEndAsync();
-    Task<string> stderrTask = proc.StandardError.ReadToEndAsync();
-
-    proc.WaitForExit();
-
-    string stdout = stdoutTask.Result;
-    string stderr = stderrTask.Result;
-
-    if (proc.ExitCode != 0)
-    {
-        Console.Error.WriteLine("error: linking failed:");
-        if (!string.IsNullOrWhiteSpace(stdout)) Console.Error.WriteLine(stdout);
-        if (!string.IsNullOrWhiteSpace(stderr)) Console.Error.WriteLine(stderr);
+        Console.Error.WriteLine("error: linking failed");
         Console.Error.WriteLine($"(object file kept at: {objPath})");
         return 1;
     }
@@ -174,8 +111,14 @@ catch (SourceError ex)
     Console.Error.WriteLine($"{sourcePath}({ex.Line},{ex.Col}): error: {ex.Message}");
     return 1;
 }
+catch (Exception ex) when (Environment.GetEnvironmentVariable("HS_DEBUG") == "1")
+{
+    Console.Error.WriteLine(ex);
+    return 1;
+}
 catch (Exception ex)
 {
     Console.Error.WriteLine("error: " + ex.Message);
     return 1;
 }
+

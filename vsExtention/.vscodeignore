@@ -1,0 +1,9 @@
+.vscode/**
+.vscodeignore
+.gitignore
+.mimosa/**
+**/*.vsix
+**/*.pdb
+package-lock.json
+**/*.md
+!README.md

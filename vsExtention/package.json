@@ -1,0 +1,252 @@
+{
+  "name": "hsharp-language",
+  "displayName": "H# Language Support",
+  "description": "Full H# (.hs) support: context-true IntelliSense from the real compiler, multi-error diagnostics, quick fixes with auto-import, rename, formatting, inlay hints, and one-key build and run",
+  "version": "0.7.3",
+  "publisher": "local",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/VoidbornGames/H-Sharp"
+  },
+  "keywords": [
+    "hsharp",
+    "h#",
+    "native",
+    "compilers"
+  ],
+  "engines": {
+    "vscode": "^1.82.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:hsharp",
+    "onLanguage:haskell",
+    "workspaceContains:**/*.hs",
+    "onCommand:hsharp.run",
+    "onCommand:hsharp.build",
+    "onCommand:hsharp.check",
+    "onCommand:hsharp.showSetup",
+    "onCommand:hsharp.restartServer"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "hsharp.run",
+        "title": "Run",
+        "category": "H#",
+        "icon": "$(play)"
+      },
+      {
+        "command": "hsharp.build",
+        "title": "Build program",
+        "category": "H#",
+        "icon": "$(debug-start)"
+      },
+      {
+        "command": "hsharp.check",
+        "title": "Check current file",
+        "category": "H#"
+      },
+      {
+        "command": "hsharp.restartServer",
+        "title": "Restart the language server",
+        "category": "H#"
+      },
+      {
+        "command": "hsharp.showSetup",
+        "title": "Show setup status",
+        "category": "H#"
+      },
+      {
+        "command": "hsharp.associateHs",
+        "title": "Associate .hs files with H#",
+        "category": "H#"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "hsharp.run",
+          "group": "navigation@1",
+          "when": "editorLangId == hsharp"
+        },
+        {
+          "command": "hsharp.build",
+          "group": "navigation@2",
+          "when": "editorLangId == hsharp"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "hsharp.run",
+        "key": "f5",
+        "when": "editorLangId == hsharp"
+      },
+      {
+        "command": "hsharp.restartServer",
+        "key": "ctrl+alt+r",
+        "when": "editorLangId == hsharp"
+      }
+    ],
+    "languages": [
+      {
+        "id": "hsharp",
+        "aliases": [
+          "H#",
+          "hsharp"
+        ],
+        "extensions": [
+          ".hs"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/hsharp-light.svg",
+          "dark": "./icons/hsharp-dark.svg"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "hsharp",
+        "scopeName": "source.hsharp",
+        "path": "./syntaxes/hsharp.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "hsharp",
+        "path": "./snippets/hsharp.code-snippets.json"
+      }
+    ],
+    "tasks": [
+      {
+        "label": "H#: Check current file",
+        "type": "process",
+        "command": "${config:hsharp.compilerPath}",
+        "args": [
+          "${file}",
+          "--check"
+        ],
+        "windows": {
+          "command": "${config:hsharp.compilerPath}",
+          "args": [
+            "${file}",
+            "--check"
+          ]
+        },
+        "group": "build",
+        "presentation": {
+          "reveal": "silent",
+          "panel": "shared",
+          "clear": true
+        },
+        "problemMatcher": {
+          "owner": "hsharp",
+          "fileLocation": "absolute",
+          "pattern": {
+            "regexp": "^(.+?)\\((\\d+),(\\d+)\\): error: (.*)$",
+            "file": 1,
+            "line": 2,
+            "column": 3,
+            "message": 4,
+            "severity": "error"
+          }
+        }
+      },
+      {
+        "label": "H#: Build program",
+        "type": "process",
+        "command": "${config:hsharp.compilerPath}",
+        "args": [
+          "${file}",
+          "-o",
+          "${fileDirname}/${fileBasenameNoExtension}.exe"
+        ],
+        "windows": {
+          "command": "${config:hsharp.compilerPath}",
+          "args": [
+            "${file}",
+            "-o",
+            "${fileDirname}\\${fileBasenameNoExtension}.exe"
+          ]
+        },
+        "group": {
+          "kind": "build",
+          "isDefault": true
+        },
+        "presentation": {
+          "reveal": "always",
+          "panel": "shared",
+          "clear": true
+        },
+        "problemMatcher": {
+          "owner": "hsharp",
+          "fileLocation": "absolute",
+          "pattern": {
+            "regexp": "^(.+?)\\((\\d+),(\\d+)\\): error: (.*)$",
+            "file": 1,
+            "line": 2,
+            "column": 3,
+            "message": 4,
+            "severity": "error"
+          }
+        }
+      },
+      {
+        "label": "H#: Build and run",
+        "type": "process",
+        "command": "${fileDirname}/${fileBasenameNoExtension}.exe",
+        "windows": {
+          "command": "${fileDirname}\\${fileBasenameNoExtension}.exe"
+        },
+        "dependsOn": [
+          "H#: Build program"
+        ],
+        "group": "test",
+        "presentation": {
+          "reveal": "always",
+          "panel": "dedicated"
+        },
+        "problemMatcher": []
+      }
+    ],
+    "configuration": {
+      "title": "H#",
+      "properties": {
+        "hsharp.compilerPath": {
+          "type": "string",
+          "default": "hsc",
+          "description": "Path to the hsc compiler binary, or a directory containing it. Leave as 'hsc' if it is on your PATH (the H# installer adds it)."
+        },
+        "hsharp.languageServerPath": {
+          "type": "string",
+          "default": "hsharp-lsp",
+          "description": "Path to the hsharp-lsp binary, or a directory containing it. The extension bundles its own copy, so this only needs setting to use a different one."
+        },
+        "hsharp.trace.server": {
+          "type": "string",
+          "default": "off",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "description": "Trace the communication between VS Code and the H# language server into the output channel. Useful when reporting bugs."
+        }
+      }
+    },
+    "configurationDefaults": {
+      "code-runner.executorMap": {
+        "hsharp": "hsc \"$fileName\" -o \"$fileDirname/$fileBasenameNoExtension.exe\" && \"$fileDirname/$fileBasenameNoExtension.exe\""
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}

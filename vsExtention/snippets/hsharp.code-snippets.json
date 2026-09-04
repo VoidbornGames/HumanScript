@@ -1,0 +1,329 @@
+{
+  "Function declaration": {
+    "prefix": "func",
+    "body": [
+      "${1:void} ${2:name}(${3:})",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "H# function declaration"
+  },
+  "Generic function": {
+    "prefix": "genfunc",
+    "body": [
+      "${1:T} ${2:name}<${1:T}>(${3:${1:T} value})",
+      "{",
+      "\treturn ${4:value};",
+      "}"
+    ],
+    "description": "Generic function with type parameter"
+  },
+  "If statement": {
+    "prefix": "if",
+    "body": [
+      "if (${1:condition})",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "If statement"
+  },
+  "If/else statement": {
+    "prefix": "ifelse",
+    "body": [
+      "if (${1:condition})",
+      "{",
+      "\t$2",
+      "}",
+      "else",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "If/else statement"
+  },
+  "For loop": {
+    "prefix": "for",
+    "body": [
+      "for (var ${1:i} = 0; $1 < ${2:count}; $1++)",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "C-style for loop"
+  },
+  "Foreach loop": {
+    "prefix": "foreach",
+    "body": [
+      "foreach (var ${1:item} in ${2:collection})",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "Foreach loop"
+  },
+  "While loop": {
+    "prefix": "while",
+    "body": [
+      "while (${1:condition})",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "While loop"
+  },
+  "While not exiting": {
+    "prefix": "whileexit",
+    "body": [
+      "while (!exiting())",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "Loop until Ctrl+C / SIGTERM (exiting())"
+  },
+  "Class declaration": {
+    "prefix": "class",
+    "body": [
+      "class ${1:Name}",
+      "{",
+      "\t${2:string} ${3:Name};",
+      "",
+      "\tpublic ${4:void} ${5:Method}()",
+      "\t{",
+      "\t\t$0",
+      "\t}",
+      "}"
+    ],
+    "description": "Class with fields and a method"
+  },
+  "Struct declaration": {
+    "prefix": "struct",
+    "body": [
+      "struct ${1:Name}",
+      "{",
+      "\t${2:int} ${3:X};",
+      "",
+      "\t${4:int} Sum()",
+      "\t{",
+      "\t\treturn ${3:X} + ${5:Y};",
+      "\t}",
+      "}"
+    ],
+    "description": "Struct with a method"
+  },
+  "Object initializer": {
+    "prefix": "new",
+    "body": [
+      "var ${1:name} = ${2:Type} { ${3:Field}: ${4:value} };"
+    ],
+    "description": "Class/struct initializer expression"
+  },
+  "Enum declaration": {
+    "prefix": "enum",
+    "body": [
+      "enum ${1:Name}",
+      "{",
+      "\t${2:First},",
+      "\t${3:Second} = ${4:5},",
+      "\t$0",
+      "}"
+    ],
+    "description": "Enum declaration"
+  },
+  "Map literal": {
+    "prefix": "map",
+    "body": [
+      "var ${1:m} = map<${2:string}, ${3:int}> { ${4:\"key\"}: ${5:1} };"
+    ],
+    "description": "map<K, V> with entries"
+  },
+  "Map lookup with default": {
+    "prefix": "mapget",
+    "body": [
+      "${1:m}[${2:key}] ?? ${3:0}"
+    ],
+    "description": "Nullable map read with ?? default"
+  },
+  "Lock statement": {
+    "prefix": "lock",
+    "body": [
+      "lock (${1:shared})",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "Mutual exclusion on a shared variable"
+  },
+  "Try/catch with error": {
+    "prefix": "try",
+    "body": [
+      "try",
+      "{",
+      "\t$1",
+      "}",
+      "catch (${2:e})",
+      "{",
+      "\tprint($2);$0",
+      "}"
+    ],
+    "description": "Try/catch binding the error message"
+  },
+  "Task.Run": {
+    "prefix": "task",
+    "body": [
+      "var ${1:t} = Task.Run(() =>",
+      "{",
+      "\t$0",
+      "\treturn ${2:0};",
+      "});"
+    ],
+    "description": "Start a background task"
+  },
+  "Task delay": {
+    "prefix": "delay",
+    "body": [
+      "await Task.Delay(${1:100});"
+    ],
+    "description": "Await a millisecond delay"
+  },
+  "Task.WhenAll": {
+    "prefix": "whenall",
+    "body": [
+      "var ${1:results} = Task.WhenAll(list<task<int>> { ${2:ta}, ${3:tb} });"
+    ],
+    "description": "Join a list of tasks into a list of results"
+  },
+  "TCP concurrent server": {
+    "prefix": "tcpserver",
+    "body": [
+      "var ${1:ln} = Tcp.Listen(${2:8080});",
+      "$1.OnAccept((Client c) =>",
+      "{",
+      "\tvar line = c.Recv();",
+      "\tc.Send(${3:\"reply\\n\"});",
+      "\tc.Close();",
+      "});"
+    ],
+    "description": "Concurrent TCP server via OnAccept"
+  },
+  "HTTP listener": {
+    "prefix": "listen",
+    "body": [
+      "var ${1:ln} = Http.Listen(${2:8080});",
+      "$1.OnAccept((HttpPacket req) =>",
+      "{",
+      "\treq.Respond(${3:200}, ${4:\"ok\\n\"});",
+      "});"
+    ],
+    "description": "Concurrent HTTP server via OnAccept"
+  },
+  "HTTP raw listener (fast path)": {
+    "prefix": "listenraw",
+    "body": [
+      "var ${1:ln} = Http.ListenRaw(${2:80});",
+      "$1.OnAccept((RawHttpPacket raw) =>",
+      "{",
+      "\t$3}",
+      "});"
+    ],
+    "description": "Raw HTTP listener: endpoints only until ToHttpPacket()"
+  },
+  "Reverse proxy gate": {
+    "prefix": "fwd",
+    "body": [
+      "var ${1:ln} = Http.ListenRaw(${2:80});",
+      "$1.OnAccept((RawHttpPacket raw) =>",
+      "{",
+      "\tvar req = raw.ToHttpPacket();",
+      "\tif (req.Path() == ${3:\"/blocked\"})",
+      "\t{",
+      "\t\treq.Respond(403, \"forbidden\\n\");",
+      "\t}",
+      "\telse",
+      "\t{",
+      "\t\treq.Forward(\"127.0.0.1\", ${4:8080});",
+      "\t}",
+      "});"
+    ],
+    "description": "Filter and forward to an upstream"
+  },
+  "HTTP client": {
+    "prefix": "httpget",
+    "body": [
+      "string? ${1:body} = Http.Get(${2:\"http://example.com/\"});",
+      "if ($1 != null)",
+      "{",
+      "\tprint($1);$0",
+      "}"
+    ],
+    "description": "Http.Get with null check"
+  },
+  "String builder": {
+    "prefix": "sb",
+    "body": [
+      "var ${1:sb} = StringBuilder.New();",
+      "$1.Add(${2:\"text\"});",
+      "var ${3:s} = $1.ToString();"
+    ],
+    "description": "StringBuilder accumulate and finish"
+  },
+  "Buffer": {
+    "prefix": "buf",
+    "body": [
+      "var ${1:b} = buffer(${2:64});",
+      "$1[${3:0}] = ${4:65};",
+      "${5:c.SendBytes($1);}"
+    ],
+    "description": "Byte buffer create, write, send"
+  },
+  "Print statement": {
+    "prefix": "print",
+    "body": [
+      "print($1);"
+    ],
+    "description": "print(...) call"
+  },
+  "Interpolated string": {
+    "prefix": "istr",
+    "body": [
+      "$\"${1:text} {${2:expr}}\""
+    ],
+    "description": "Interpolated string literal"
+  },
+  "Copy a borrowed value": {
+    "prefix": "copy",
+    "body": [
+      "var ${1:name} = copy(${2:source});"
+    ],
+    "description": "Explicit copy of a borrowed value (required when moving out of a borrowed parameter)"
+  },
+  "Import a library": {
+    "prefix": "import",
+    "body": [
+      "import ${1:lib}.hs;"
+    ],
+    "description": "Import declarations from another H# file"
+  },
+  "Public declaration": {
+    "prefix": "pub",
+    "body": [
+      "public ${1:string} ${2:Name}()",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "Public function exported to importers"
+  },
+  "Switch expression": {
+    "prefix": "switch",
+    "body": [
+      "switch (${1:value}) {",
+      "  case ${2:option}: ${3:result},",
+      "  default: ${4:fallback}",
+      "}"
+    ],
+    "description": "H# switch expression"
+  }
+}

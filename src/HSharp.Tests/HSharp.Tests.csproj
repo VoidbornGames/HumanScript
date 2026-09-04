@@ -18,10 +18,12 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <None Include="xunit.runner.json" CopyToOutputDirectory="Always" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\HSharp\compiler\compiler.csproj" />
+    <ProjectReference Include="..\HSharp\lsp\HSharp.Lsp.csproj" />
   </ItemGroup>
 
 </Project>

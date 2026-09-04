@@ -12,6 +12,9 @@ out/
 .idea/
 *.iml
 
+*.vsix
+*.rar
+*.zip
 *.exe
 *.dll
 *.pdb
